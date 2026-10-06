@@ -1,0 +1,18 @@
+# Lamp socket materials
+# Units: meters
+
+newmtl socket_ceramic_white
+Ka 0.090000 0.090000 0.090000
+Kd 0.180000 0.180000 0.180000
+Ks 0.260000 0.260000 0.260000
+Ns 42.000000
+d 1.000000
+illum 2
+
+newmtl socket_inner_metal
+Ka 0.090000 0.090000 0.090000
+Kd 0.180000 0.180000 0.180000
+Ks 0.260000 0.260000 0.260000
+Ns 42.000000
+d 1.000000
+illum 2

@@ -1,0 +1,10 @@
+# Simple white cable-routing snap clip material
+# Units: meters
+
+newmtl cable_clip_white
+Ka 0.960000 0.960000 0.930000
+Kd 0.960000 0.960000 0.930000
+Ks 0.040000 0.040000 0.040000
+Ns 20.000000
+d 1.000000
+illum 2

@@ -1,0 +1,19 @@
+{
+  "experiment": {
+    "output_dir": "outputs/bc/insert_usb_gelsight_suffix_dinov3_vitb16_no_qpos_seed0",
+    "resume": "outputs/bc/insert_usb_gelsight_suffix_dinov3_vitb16_no_qpos_seed0/bc_last.pt",
+    "seed": 0,
+    "device": "cuda:0"
+  },
+  "policy": {
+    "zero_qpos": true
+  },
+  "training": {
+    "epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.0001
+  },
+  "tactile": {
+    "learning_rate": 0.000003
+  }
+}

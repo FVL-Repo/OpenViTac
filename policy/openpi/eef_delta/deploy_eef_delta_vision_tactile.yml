@@ -1,0 +1,32 @@
+policy_name: openpi
+seed: 0
+instruction_type: seen
+instuction_file: null
+eval_from_start: true
+eval_step_timeout_seconds: 5
+
+openpi:
+  # For TI-ONE access, keep this config on the direct OpenPI serve address,
+  # or override it from eval_policy.py with --openpi_host/--openpi_port.
+  host: "127.0.0.1"
+  port: 8000
+  api_key:
+  websocket_ping_interval:
+  websocket_ping_timeout:
+  websocket_open_timeout: 10
+  websocket_close_timeout: 10
+  prompt: "pick and insert the USB"
+  prompt_from_task_instruction: true
+  control_mode: "delta_eef"
+  eef_state_mode: "rot6d_10"
+  eef_action_type: "delta_ee_rotvec_ik"
+  eef_servo_force: true
+  state_dim: 10
+  action_dim: 7
+  image_size: 224
+  send_tactile: true
+  image_color_order: "rgb"
+  debug_dump_first_n_obs: 1
+  debug_dump_dir: "debug/openpi_obs_eef_delta_vision_tactile"
+  debug_dump_bgr_interpretation: true
+  open_loop_horizon: 20

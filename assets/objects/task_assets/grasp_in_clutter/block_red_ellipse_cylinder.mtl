@@ -1,0 +1,9 @@
+# Block red ellipse cylinder material
+# Units: meters
+
+newmtl block_red_ellipse_cylinder
+Ka 0.901961 0.050980 0.039216
+Kd 0.901961 0.050980 0.039216
+Ks 0.000000 0.000000 0.000000
+Ns 32.000000
+illum 2

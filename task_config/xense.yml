@@ -1,0 +1,24 @@
+save_dir: ./data
+
+decimation: 1
+
+save_frequency: 2
+video_frequency: 2
+render_frequency: 0 # set to 1 to open one IsaacSim App window
+
+random_texture: false # set to true to enable random texture
+
+use_seed: true
+episode_num: 10
+
+sensor_type: xensews
+
+observations:
+  camera: ['rgb']
+  tactile: ['rgb', 'rgb_marker', 'marker', 'depth', 'indentation', 'pose']
+  embodiment: ['joint', 'ee']
+  actor: true
+
+save_pre_move: true
+tactile_video_key: rgb_marker
+skip_pre_move: true

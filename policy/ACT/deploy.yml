@@ -1,0 +1,7 @@
+# Basic experiment configuration
+policy_name: ACT
+seed: 0
+ckpt_setting: 50
+instruction_type: seen
+instuction_file: null
+rollout_from_pre_move: true

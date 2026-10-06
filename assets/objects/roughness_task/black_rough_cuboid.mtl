@@ -1,0 +1,10 @@
+# Rough black cuboid material
+# Units: meters
+
+newmtl black_rough_cuboid
+Ka 0.000000 0.000000 0.000000
+Kd 0.002000 0.002000 0.002000
+Ks 0.008000 0.008000 0.008000
+Ns 4.000000
+d 1.000000
+illum 2

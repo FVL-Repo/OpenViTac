@@ -1,0 +1,59 @@
+# Four-task profile: 120 Hz physics, 60 Hz observations/actions.
+decimation: 1
+save_frequency: 2
+video_frequency: 2
+render_frequency: 2
+max_episode_seconds: 2200
+sensor_type: gsmini
+random_texture: false
+save_pre_move: true
+tactile_video_key: rgb_marker
+observations:
+  camera:
+  - rgb
+  tactile:
+  - rgb
+  - rgb_marker
+  - depth
+  - marker
+  - pose
+  embodiment:
+  - joint
+  - ee
+  actor:
+  - pose
+uniform_policy_recording: true
+save_dir: ./data
+start_seed: 0
+max_seed: 99
+episode_num: 1
+use_seed: true
+skip_pre_move: false
+task_parameters:
+  target_force_N: 8.0
+  gel_modulus_mpa: 0.05
+  foam_core_modulus_mpa: 1.0
+  foam_soft_skin_m: 0.008
+  newton_max_iter: 64
+  glaze_damage_enabled: true
+  abrasion_force_N: 10.5
+  glaze_damage_work_J: 0.00015
+  overload_force_N: 12.5
+  wipe_lane_angles_rad:
+  - 0.0
+  - 0.14
+  max_wipe_steps: 6600
+  pressure_band_N:
+  - 7.2
+  - 8.8
+  soil_material_mode: opaque_grains
+  enable_fractional_soil_opacity: false
+  live_action_joint_state: true
+  record_images_every: 1000000000
+  vase_position_half_range_m:
+  - 0.02
+  - 0.02
+  - 0.015
+  required_clean_fraction: 0.925
+  controller: marker_rgb
+  calibration: task_config/vase_wiping_rgb/model.json

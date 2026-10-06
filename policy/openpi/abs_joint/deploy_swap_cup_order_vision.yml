@@ -1,0 +1,26 @@
+policy_name: openpi
+seed: 0
+instruction_type: seen
+instuction_file: null
+eval_from_start: true
+eval_step_timeout_seconds: 5
+eval_action_repeat: 1
+
+openpi:
+  host: "127.0.0.1"
+  port: 8000
+  api_key:
+  websocket_ping_interval:
+  websocket_ping_timeout:
+  websocket_open_timeout: 10
+  websocket_close_timeout: 10
+  prompt: "swap the cup order"
+  prompt_from_task_instruction: true
+  action_dim: 8
+  image_size: 224
+  send_tactile: false
+  image_color_order: "rgb"
+  debug_dump_first_n_obs: 1
+  debug_dump_dir: "debug/openpi_obs_swap_cup_order_vision"
+  debug_dump_bgr_interpretation: true
+  open_loop_horizon: 20

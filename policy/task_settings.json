@@ -1,0 +1,78 @@
+{
+    "insert_HDMI": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "lift_bottle": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "lift_can": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "pull_out_key": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "put_bottle_in_shelf": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "insert_card": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "insert_hole": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "insert_lean": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "insert_tube": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "grasp_classify": {
+        "camera_type": "head",
+        "downsample": 1
+    },
+    "insert_USB": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "insert_block": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "grasp_in_clutter": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "place_cube_on_colored_area": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "pull_drawer": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "pour_ball_to_cup": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "move_cup": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "turn_gear_pair": {
+        "camera_type": "all",
+        "downsample": 1
+    },
+    "thread_routing": {
+        "camera_type": "all",
+        "downsample": 1
+    }
+}

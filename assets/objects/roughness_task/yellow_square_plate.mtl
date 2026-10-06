@@ -1,0 +1,10 @@
+# Yellow square plate material
+# Units: meters
+
+newmtl yellow_square_plate
+Ka 0.949020 0.780392 0.050980
+Kd 0.949020 0.780392 0.050980
+Ks 0.080000 0.080000 0.080000
+Ns 35.000000
+d 1.000000
+illum 2

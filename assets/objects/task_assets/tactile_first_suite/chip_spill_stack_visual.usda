@@ -1,0 +1,52 @@
+#usda 1.0
+(
+    defaultPrim = "chip_spill_stack_visual"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "chip_spill_stack_visual"
+{
+    def Xform "stack"
+    {
+        def Xform "chip_0" (
+            prepend references = @fragile_chip_medium_scan_visual.usda@
+        )
+        {
+            float xformOp:rotateZ = 0
+            float3 xformOp:scale = (1.12, 1.07, 0.82)
+            double3 xformOp:translate = (0.005, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Xform "chip_1" (
+            prepend references = @fragile_chip_medium_scan_visual.usda@
+        )
+        {
+            float xformOp:rotateZ = 17
+            float3 xformOp:scale = (1.08, 1.05, 0.82)
+            double3 xformOp:translate = (-0.005, 0.002, 0.003)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Xform "chip_2" (
+            prepend references = @fragile_chip_medium_scan_visual.usda@
+        )
+        {
+            float xformOp:rotateZ = 34
+            float3 xformOp:scale = (1.04, 1.03, 0.82)
+            double3 xformOp:translate = (0.005, 0.004, 0.006)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+
+        def Xform "chip_3" (
+            prepend references = @fragile_chip_medium_scan_visual.usda@
+        )
+        {
+            float xformOp:rotateZ = 51
+            float3 xformOp:scale = (1, 1.01, 0.82)
+            double3 xformOp:translate = (-0.005, 0.006, 0.009000000000000001)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ", "xformOp:scale"]
+        }
+    }
+}

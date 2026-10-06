@@ -1,0 +1,41 @@
+policy_name: openpi
+seed: 0
+instruction_type: seen
+instuction_file: null
+eval_from_start: true
+eval_step_timeout_seconds: 10
+eval_action_repeat: 1
+
+openpi:
+  # Use an SSH tunnel from local 127.0.0.1:8000 to the remote serve process.
+  host: "127.0.0.1"
+  port: 8006
+  api_key:
+  websocket_ping_interval:
+  websocket_ping_timeout:
+  websocket_open_timeout: 10
+  websocket_close_timeout: 10
+  prompt: "Pick up the USB plug from the blue slot and insert it into the red USB slot."
+  prompt_from_task_instruction: true
+
+  # The remote config
+  # pi05_turn_gear_pair_gelsight_sim_abs_joint_relative_action_vision_full_ft
+  # trains relative-to-state joint actions internally with OpenPI DeltaActions
+  # (target_joint - observation/state joint, not adjacent-frame delta), but serving
+  # applies the matching AbsoluteActions output transform. The websocket output is
+  # therefore executable absolute qpos8, so the OpenViTac client should stay in
+  # abs_joint mode.
+  control_mode: "abs_joint"
+  state_dim: 8
+  action_dim: 8
+
+  image_size: 224
+  send_tactile: false
+  image_color_order: "rgb"
+  debug_dump_first_n_obs: 1
+  debug_dump_dir: "debug/openpi_obs_turn_gear_pair_pi05_relative_action_vision"
+
+  open_loop_horizon: 5
+  temporal_ensemble: true
+  chunk_first_n: 20
+  ensemble_K: 0.01

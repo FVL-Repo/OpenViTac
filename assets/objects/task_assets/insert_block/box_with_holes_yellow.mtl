@@ -1,0 +1,10 @@
+# Wooden box with three top holes material
+# Units: meters
+
+newmtl box_with_holes_yellow
+Ka 1.000000 0.819608 0.019608
+Kd 1.000000 0.819608 0.019608
+Ks 0.050000 0.040000 0.030000
+Ns 20.000000
+d 1.000000
+illum 2

@@ -1,0 +1,20 @@
+# Four force tasks only. Override the Pi05 server with --openpi_host/--openpi_port.
+policy_name: openpi
+seed: 0
+instruction_type: seen
+instuction_file: null
+eval_step_timeout_seconds: 70
+eval_action_repeat: 2
+openpi:
+  host: 127.0.0.1
+  port: 8000
+  control_mode: abs_joint
+  prompt_from_task_instruction: true
+  action_dim: 8
+  state_dim: 8
+  action_repeat: 2
+  image_size: 224
+  send_tactile: false
+  image_color_order: rgb
+  open_loop_horizon: 20
+  debug_dump_first_n_obs: 0

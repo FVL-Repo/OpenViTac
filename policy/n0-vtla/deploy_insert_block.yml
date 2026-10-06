@@ -1,0 +1,28 @@
+policy_name: n0-vtla
+seed: 0
+instruction_type: seen
+instuction_file: null
+eval_from_start: true
+eval_step_timeout_seconds: 30
+
+n0_vtla:
+  # Use an SSH tunnel to the remote N0-VTLA server; see README_commands.md.
+  host: "127.0.0.1"
+  port: 8014
+  api_key:
+  prompt: "Insert the blue half cylinder into the matching hole in the yellow box."
+  prompt_from_task_instruction: true
+  action_schema: "absolute_qpos8"
+  action_dim: 8
+  # Receding horizon: the server returns 50 actions, while the client executes this many before re-querying.
+  open_loop_horizon: 10
+  # Training images were restored to RGB by convert_openvitac_sim_single_arm.py. Keep live RGB unchanged.
+  # Set to bgr only for a checkpoint trained on BGR-valued images.
+  image_color_order: "rgb"
+  tactile_image_key: "rgb_marker"
+  # The converter's default (--gripper-mode mean) was used by run_openvitac_sim_single_arm_task.sh.
+  gripper_mode: "mean"
+  reconnect_sleep_s: 1
+  request_retries: 1
+  websocket_open_timeout: 30
+  websocket_close_timeout: 10

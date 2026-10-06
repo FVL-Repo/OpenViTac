@@ -1,0 +1,40 @@
+# Four-task profile: 120 Hz physics, 60 Hz observations/actions.
+decimation: 1
+save_frequency: 2
+video_frequency: 2
+render_frequency: 2
+random_texture: false
+use_seed: true
+episode_num: 1
+start_seed: 0
+max_seed: 99
+step_lim: 3600
+max_episode_seconds: 1350
+sensor_type: gsmini
+firm_transport_press: false
+observations:
+  camera:
+  - rgb
+  tactile:
+  - rgb
+  - rgb_marker
+  - depth
+  - marker
+  - pose
+  embodiment:
+  - joint
+  - ee
+  actor:
+  - pose
+save_pre_move: true
+tactile_video_key: rgb_marker
+skip_pre_move: true
+uniform_policy_recording: true
+max_save_frames: 4800
+reset_final_steps: 16
+save_dir: ./data
+task_parameters:
+  chip_curvature_origin: area_centroid
+  live_action_joint_state: true
+  record_images_every: 1000000000
+  chip_randomization_scale: 1.2

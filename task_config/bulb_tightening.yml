@@ -1,0 +1,61 @@
+# Four-task profile: 120 Hz physics, 60 Hz observations/actions.
+decimation: 1
+save_frequency: 2
+video_frequency: 2
+render_frequency: 2
+max_episode_seconds: 4000
+sensor_type: gsmini
+random_texture: false
+save_pre_move: true
+tactile_video_key: rgb_marker
+observations:
+  camera:
+  - rgb
+  tactile:
+  - rgb
+  - rgb_marker
+  - depth
+  - marker
+  - pose
+  embodiment:
+  - joint
+  - ee
+  actor:
+  - pose
+uniform_policy_recording: true
+reset_time_limit: 600
+save_dir: ./data
+start_seed: 0
+max_seed: 99
+episode_num: 1
+use_seed: true
+skip_pre_move: false
+task_parameters:
+  initial_depth_m: 0.014
+  seat_top_m: 0.022
+  grip_depth_mm: 27.2
+  thread_friction: 0.15
+  target_torque_Nm: 0.12
+  torque_tolerance_Nm: 0.012
+  gel_modulus_mpa: 0.05
+  glass_damage_enabled: true
+  newton_max_iter: 64
+  glass_fragment_model: hollow_shell
+  glass_break_force_N: 135.0
+  over_torque_Nm: 0.15
+  policy_hold_steps: 180
+  image_feature_extractor: tracked_flow_rgb_grid
+  hold_control_deadband_Nm: 0.008
+  newton_velocity_tol_m_s: 0.001
+  friction_eps_velocity_m_s: 0.0001
+  glass_fragment_material: frosted_glass
+  glass_fragment_opacity: 1.0
+  thread_mesh_mode: source_boundary
+  efficient_wrist_motion: true
+  progressive_seating_speed: true
+  public_tactile_grasp: true
+  live_action_joint_state: true
+  preserve_thread_flank_width: true
+  probe_lead_estimator: forward_response
+  record_images_every: 1000000000
+  controller: diagnostic_force

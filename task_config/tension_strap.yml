@@ -1,0 +1,62 @@
+# Four-task profile: 120 Hz physics, 60 Hz observations/actions.
+decimation: 1
+save_frequency: 2
+video_frequency: 2
+render_frequency: 2
+max_episode_seconds: 2000
+sensor_type: gsmini
+random_texture: false
+save_pre_move: true
+tactile_video_key: rgb_marker
+observations:
+  camera:
+  - rgb
+  tactile:
+  - rgb
+  - rgb_marker
+  - depth
+  - marker
+  - pose
+  embodiment:
+  - joint
+  - ee
+  actor:
+  - pose
+uniform_policy_recording: true
+save_dir: ./data
+start_seed: 0
+max_seed: 99
+episode_num: 1
+use_seed: true
+skip_pre_move: false
+task_parameters:
+  target_N: 12.0
+  tolerance_N: 0.5
+  overload_N: 24.0
+  geometry: bundle
+  mesh_path: assets/objects/task_assets/tactile_first_suite/elastic_strap_bundle.npz
+  strap_self_contact: true
+  band_centers_m:
+  - -0.025
+  - 0.0
+  - 0.025
+  grasp_depth_mm: 27.6
+  force_gain_Ns_per_m: 2000.0
+  rupture_enabled: true
+  gel_modulus_mpa: 0.05
+  newton_max_iter: 64
+  contact_d_hat_m: 0.001
+  image_feature_extractor: tracked_flow_rgb_grid
+  rupture_profile: notched
+  target_sequence_N:
+  - 12.0
+  - 18.0
+  hold_seconds: 3.0
+  policy_timeout_seconds: 60.0
+  newton_velocity_tol_m_s: 0.0001
+  public_tactile_grasp: true
+  controller_deadband_N: 0.02
+  live_action_joint_state: true
+  record_images_every: 1000000000
+  controller: marker_rgb
+  calibration: task_config/force_task_rgb/tension_strap_dual_stage.json

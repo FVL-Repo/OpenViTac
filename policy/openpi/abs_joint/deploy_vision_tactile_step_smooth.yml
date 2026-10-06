@@ -1,0 +1,31 @@
+policy_name: openpi
+seed: 0
+instruction_type: seen
+instuction_file: null
+eval_from_start: true
+eval_step_timeout_seconds: 5
+eval_action_repeat: 1
+
+openpi:
+  host: "127.0.0.1"
+  port: 8000
+  api_key:
+  websocket_ping_interval:
+  websocket_ping_timeout:
+  websocket_open_timeout: 10
+  websocket_close_timeout: 10
+  prompt: "pick and insert the USB"
+  prompt_from_task_instruction: true
+  control_mode: "abs_joint"
+  state_dim: 8
+  action_dim: 8
+  image_size: 224
+  send_tactile: true
+  image_color_order: "rgb"
+  debug_dump_first_n_obs: 1
+  debug_dump_dir: "debug/openpi_obs_abs_joint_vision_tactile_step_smooth"
+  debug_dump_bgr_interpretation: true
+  open_loop_horizon: 1
+  temporal_ensemble: true
+  chunk_first_n: 20
+  ensemble_K: 0.01

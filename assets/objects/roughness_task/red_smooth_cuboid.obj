@@ -1,0 +1,26 @@
+# Smooth red cuboid
+# Units: meters
+# Coordinate system: Z up, origin at bottom-face center
+# Dimensions: 0.015 x 0.015 x 0.080
+
+mtllib red_smooth_cuboid.mtl
+o red_smooth_cuboid
+
+v -0.007500000 -0.007500000  0.000000000
+v  0.007500000 -0.007500000  0.000000000
+v  0.007500000  0.007500000  0.000000000
+v -0.007500000  0.007500000  0.000000000
+v -0.007500000 -0.007500000  0.080000000
+v  0.007500000 -0.007500000  0.080000000
+v  0.007500000  0.007500000  0.080000000
+v -0.007500000  0.007500000  0.080000000
+
+usemtl red_smooth_cuboid
+s off
+
+f 1 4 3 2
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8

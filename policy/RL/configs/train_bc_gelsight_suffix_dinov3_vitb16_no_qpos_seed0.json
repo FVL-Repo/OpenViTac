@@ -1,0 +1,56 @@
+{
+  "experiment": {
+    "output_dir": "outputs/bc/insert_usb_gelsight_suffix_dinov3_vitb16_no_qpos_seed0",
+    "overwrite_output": true,
+    "resume": null,
+    "initialize_from": null,
+    "seed": 0,
+    "device": "cuda:0"
+  },
+  "data": {
+    "data_dir": "data/insert_usb/gelsight/hdf5",
+    "hdf5_pattern": "*.hdf5",
+    "recursive": false,
+    "validation_fraction": 0.1,
+    "image_size": 224,
+    "insertion_tag": "move_usb_to_play_pre_insert,insert_usb_into_slot",
+    "require_policy_phase": true,
+    "action_horizon": 1
+  },
+  "policy": {
+    "policy_class": "GaussianActor",
+    "action_dim": 7,
+    "qpos_dim": 7,
+    "zero_qpos": true,
+    "hidden_dim": 256,
+    "log_std_min": -5.0,
+    "log_std_max": 2.0
+  },
+  "training": {
+    "epochs": 200,
+    "batch_size": 32,
+    "num_workers": 4,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "max_grad_norm": 1.0
+  },
+  "vision": {
+    "backbone": "dinov3_vitb16",
+    "camera_names": [
+      "cam_high",
+      "cam_wrist"
+    ],
+    "pretrained_path": "models/dinov3-vitb16-pretrain-lvd1689m",
+    "freeze_backbone": true
+  },
+  "tactile": {
+    "backbone": "resnet18",
+    "tactile_names": [
+      "tac_left",
+      "tac_right"
+    ],
+    "checkpoint": "encoder/checkpoints/resnet18/official_ckpt/best.pth",
+    "freeze_backbone": false,
+    "learning_rate": 0.000003
+  }
+}

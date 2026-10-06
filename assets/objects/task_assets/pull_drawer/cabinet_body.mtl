@@ -1,0 +1,10 @@
+# Units: meters
+# Coordinate system: Z up
+
+newmtl wood
+Kd 0.360000 0.200000 0.090000
+Ka 0.000000 0.000000 0.000000
+Ks 0.000000 0.000000 0.000000
+Ns 44.000000
+d 1.000000
+illum 2

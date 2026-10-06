@@ -1,0 +1,27 @@
+policy_name: internvla_a1_5
+seed: 0
+instruction_type: seen
+instruction_file: null
+eval_from_start: true
+eval_step_timeout_seconds: 10
+
+internvla_a1_5:
+  host: "127.0.0.1"
+  port: 8023
+  api_key:
+  prompt: "Pick up the USB plug from the blue slot and insert it into the red USB slot."
+  prompt_from_task_instruction: true
+  action_schema: "absolute_eef8_wxyz"
+  action_dim: 8
+  execute_from_index: 0
+  open_loop_horizon: 20
+  image_color_order: "rgb"
+  image_width: 320
+  image_height: 240
+  ik_servo_force: true
+  debug_dump_first_n_obs: 1
+  debug_dump_dir: "debug/internvla_a1_5_obs_insert_USB"
+  reconnect_sleep_s: 1
+  request_retries: 1
+  websocket_open_timeout: 10
+  websocket_close_timeout: 10

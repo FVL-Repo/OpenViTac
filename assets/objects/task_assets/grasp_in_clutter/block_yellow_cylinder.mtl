@@ -1,0 +1,9 @@
+# Block yellow cylinder material
+# Units: meters
+
+newmtl block_yellow_cylinder
+Ka 1.000000 0.820000 0.020000
+Kd 1.000000 0.820000 0.020000
+Ks 0.000000 0.000000 0.000000
+Ns 32.000000
+illum 2

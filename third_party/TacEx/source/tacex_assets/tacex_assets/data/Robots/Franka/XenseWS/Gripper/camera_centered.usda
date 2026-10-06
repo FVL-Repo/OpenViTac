@@ -1,0 +1,153 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    subLayers = [
+        @padgap.usda@
+    ]
+)
+
+over "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+{
+    over "root_joint"
+    {
+        over "XenseWS_left"
+        {
+            over "Camera"
+            {
+                float2 clippingRange = (0.024, 0.034)
+                float focalLength = 20
+                float horizontalAperture = 14
+                float verticalAperture = 23.5
+                matrix4d xformOp:transform = ( (0, 0, -1, 0), (-1, -7.498798913309288e-33, 0, 0), (3.7574518450697696e-32, 1, -8.343219104633469e-48, 0), (0.09665440276286963, 0.06715861619710922, -0.12649521141181475, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+            }
+
+            over "xense_robotiq_adapter_left_notips_tipdown" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+                bool primvars:invisibleToSecondaryRays = 1
+            }
+
+            over "xense_real_case_left_notips_tipdown" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+                bool primvars:invisibleToSecondaryRays = 1
+            }
+        }
+
+        over "XenseWS_right"
+        {
+            over "Camera"
+            {
+                float2 clippingRange = (0.024, 0.034)
+                float focalLength = 20
+                float horizontalAperture = 14
+                float verticalAperture = 23.5
+                matrix4d xformOp:transform = ( (4.440892098500626e-16, 3.33013568423603e-48, 1, 0), (-1, -7.498798913309288e-33, 4.440892098500626e-16, 0), (-3.7574518450697696e-32, -1, 8.343219104633469e-48, 0), (0.1815716577416605, -0.06715861619710922, -0.12649521141181475, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+            }
+
+            over "xense_robotiq_adapter_right_notips_tipdown" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+                bool primvars:invisibleToSecondaryRays = 1
+            }
+
+            over "xense_real_case_right_notips_tipdown" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+                bool primvars:invisibleToSecondaryRays = 1
+            }
+        }
+
+        over "left_inner_finger"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_finger4step_01" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+            }
+        }
+
+        over "right_inner_finger"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_finger4step_01" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+            }
+        }
+    }
+
+    over "XenseWS_gelpad_left"
+    {
+        over "visual_tensor_pad"
+        {
+            over "pad_mesh_offset"
+            {
+                over "xensews_pad_tensor_34p312x20p75x4mm"
+                {
+                    over "xensews_pad_tensor_34p312x20p75x4mm_m" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI"]
+                    )
+                    {
+                        float3[] extent = [(-0.0058201402, -0.008209976, -0.002000374), (0.02201986, 0.008210024, 0.001999626)]
+                        bool physics:collisionEnabled = 0
+                        point3f[] points = [(0.02201986, -0.008209976, 0.001999626), (0.02201986, 0.008210024, 0.001999626), (0.02201986, 0.008210024, -0.002000374), (0.02201986, -0.008209976, -0.002000374), (-0.0058201402, -0.008209976, 0.001999626), (-0.0058201402, 0.008210024, 0.001999626), (-0.0058201402, 0.008210024, -0.002000374), (-0.0058201402, -0.008209976, -0.002000374)]
+                        bool primvars:invisibleToSecondaryRays = 1
+                    }
+                }
+            }
+        }
+    }
+
+    over "XenseWS_gelpad_right"
+    {
+        over "visual_tensor_pad"
+        {
+            over "pad_mesh_offset"
+            {
+                over "xensews_pad_tensor_34p312x20p75x4mm"
+                {
+                    over "xensews_pad_tensor_34p312x20p75x4mm_m" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI"]
+                    )
+                    {
+                        float3[] extent = [(-0.022019872, -0.008209976, -0.002000334), (0.005820127, 0.008210024, 0.001999666)]
+                        bool physics:collisionEnabled = 0
+                        point3f[] points = [(-0.022019872, -0.008209976, -0.002000334), (-0.022019872, 0.008210024, -0.002000334), (-0.022019872, 0.008210024, 0.001999666), (-0.022019872, -0.008209976, 0.001999666), (0.005820127, -0.008209976, -0.002000334), (0.005820127, 0.008210024, -0.002000334), (0.005820127, 0.008210024, 0.001999666), (0.005820127, -0.008209976, 0.001999666)]
+                        bool primvars:invisibleToSecondaryRays = 1
+                    }
+                }
+            }
+        }
+    }
+    # Codex: strongest WristCamera camera-prim override for Xense.
+    # The referenced base .usd authors /WristCamera/Camera more strongly than
+    # XenseWS/WristCamera.usda, so these camera-view opinions must live here.
+    # Align Camera local -Z with the Robotiq mounting-flange +Z axis.
+    # This removes the inherited GelSight local -X camera tilt.
+    over "WristCamera"
+    {
+        over "Camera"
+        {
+            # Move the optical center 25 mm along Camera local +X (image right)
+            # so the Robotiq gripper center aligns with the wrist image center.
+            double3 xformOp:translate = (0.06975424877702166, 0.07064816171241, 0.028148036275990315)
+            quatf xformOp:orient = (0.5689285600971615, 0, 0, 0.8223869487691123)
+            float focalLength = 1.5
+            float horizontalAperture = 3.2
+        }
+    }
+
+}

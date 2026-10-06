@@ -1,0 +1,10 @@
+# Block wooden cube material
+# Units: meters
+
+newmtl block_blue_cube
+Ka 0.219608 0.705882 0.866667
+Kd 0.219608 0.705882 0.866667
+Ks 0.050000 0.040000 0.030000
+Ns 20.000000
+d 1.000000
+illum 2

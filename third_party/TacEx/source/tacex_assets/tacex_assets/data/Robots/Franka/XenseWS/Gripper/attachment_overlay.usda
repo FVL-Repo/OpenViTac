@@ -1,0 +1,92 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    metersPerUnit = 1
+    subLayers = [
+        @robot_overlay.usda@
+    ]
+)
+
+over "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+{
+    over "XenseWS_gelpad_left"
+    {
+        over "visual_tensor_pad"
+        {
+            over "pad_mesh_offset"
+            {
+                over "xensews_pad_tensor_34p312x20p75x4mm"
+                {
+                    over "xensews_pad_tensor_34p312x20p75x4mm_m" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+                    )
+                    {
+                        float3[] extent = [(-0.01590014, -0.008999976, -0.002000374), (-0.00790014, 0.009000024, -0.001300374)]
+                        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+                        int[] faceVertexIndices = [0, 1, 2, 3, 4, 7, 6, 5, 0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 4, 0]
+                        uniform token physics:approximation = "convexHull"
+                        point3f[] points = [(-0.00790014, -0.008999976, -0.001300374), (-0.00790014, 0.009000024, -0.001300374), (-0.00790014, 0.009000024, -0.002000374), (-0.00790014, -0.008999976, -0.002000374), (-0.01590014, -0.008999976, -0.001300374), (-0.01590014, 0.009000024, -0.001300374), (-0.01590014, 0.009000024, -0.002000374), (-0.01590014, -0.008999976, -0.002000374)]
+                        color3f[] primvars:displayColor = [(0.04, 0.28, 0.8)]
+                        uniform token subdivisionScheme = "none"
+                    }
+                }
+            }
+        }
+    }
+
+    over "XenseWS_gelpad_right"
+    {
+        over "visual_tensor_pad"
+        {
+            over "pad_mesh_offset"
+            {
+                over "xensews_pad_tensor_34p312x20p75x4mm"
+                {
+                    over "xensews_pad_tensor_34p312x20p75x4mm_m" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+                    )
+                    {
+                        float3[] extent = [(0.007900128, -0.008999976, -0.002000334), (0.015900128, 0.009000024, -0.001300334)]
+                        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+                        int[] faceVertexIndices = [0, 1, 2, 3, 4, 7, 6, 5, 0, 4, 5, 1, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 4, 0]
+                        uniform token physics:approximation = "convexHull"
+                        point3f[] points = [(0.007900128, -0.008999976, -0.002000334), (0.007900128, 0.009000024, -0.002000334), (0.007900128, 0.009000024, -0.001300334), (0.007900128, -0.008999976, -0.001300334), (0.015900128, -0.008999976, -0.002000334), (0.015900128, 0.009000024, -0.002000334), (0.015900128, 0.009000024, -0.001300334), (0.015900128, -0.008999976, -0.001300334)]
+                        color3f[] primvars:displayColor = [(0.04, 0.28, 0.8)]
+                        uniform token subdivisionScheme = "none"
+                    }
+                }
+            }
+        }
+    }
+
+    over "root_joint"
+    {
+        over "XenseWS_left"
+        {
+            over "attachment_anchor_collision" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+                double size = 1
+                float3 xformOp:scale = (0.008, 0.00005, 0.018)
+                double3 xformOp:translate = (0.07596739188528057, 0.04448404982948101, -0.12732612091302875)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        over "XenseWS_right"
+        {
+            over "attachment_anchor_collision" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+                double size = 1
+                float3 xformOp:scale = (0.008, 0.00005, 0.018)
+                double3 xformOp:translate = (0.1608846466312408, -0.04448395017051901, -0.12622612091302876)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+    }
+}

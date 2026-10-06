@@ -1,0 +1,10 @@
+# Yellow square frame material
+# Units: meters
+
+newmtl square_frame_yellow
+Ka 0.950000 0.780000 0.050000
+Kd 0.950000 0.780000 0.050000
+Ks 0.050000 0.050000 0.050000
+Ns 20.000000
+d 1.000000
+illum 2

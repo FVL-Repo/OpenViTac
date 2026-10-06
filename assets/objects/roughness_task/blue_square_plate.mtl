@@ -1,0 +1,10 @@
+# Blue square plate material
+# Units: meters
+
+newmtl blue_square_plate
+Ka 0.000000 0.658824 0.819608
+Kd 0.000000 0.658824 0.819608
+Ks 0.080000 0.080000 0.080000
+Ns 35.000000
+d 1.000000
+illum 2
