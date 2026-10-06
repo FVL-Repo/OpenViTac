@@ -1,402 +1,234 @@
 <h1 align="center">OpenViTac</h1>
+<h3 align="center">Learning and Benchmarking Visuo-Tactile Policies<br>in a Unified Sim-and-Real Framework</h3>
 
 <p align="center">
-  A unified simulation, data-generation, learning, and evaluation workspace for
-  visuo-tactile robot manipulation.
+  <strong>A unified benchmark for robots that see and feel.</strong>
 </p>
 
-OpenViTac provides one task interface across three tactile sensor families:
-GelSight, Xense, and Neote. The same task can be paired with different tactile
-representations while preserving a common HDF5 layout, policy interface, and
-rollout workflow.
+<p align="center">
+  <a href="https://fvl-repo.github.io/OpenViTac/"><img src="https://img.shields.io/badge/Project-Website-2458b3?style=for-the-badge" alt="Project website"></a>
+  <a href="https://github.com/FVL-Repo/OpenViTac"><img src="https://img.shields.io/badge/GitHub-Code-202a3b?style=for-the-badge&logo=github" alt="GitHub code"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Get-Started-2458b3?style=for-the-badge" alt="Get started"></a>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Paper-Coming_soon-64748b?style=flat-square" alt="Paper: coming soon">
+  <img src="https://img.shields.io/badge/Hugging_Face-Coming_soon-64748b?style=flat-square&logo=huggingface" alt="Hugging Face: coming soon">
+  <img src="https://img.shields.io/badge/ModelScope-Coming_soon-64748b?style=flat-square" alt="ModelScope: coming soon">
+</p>
 
-| Sensor | `sensor_type` | Export configuration | Primary tactile representation |
-|---|---|---|---|
-| GelSight | `gsmini` | `task_config/gelsight.yml` | RGB, marker RGB, marker motion, depth, pose |
-| Xense | `xensews` | `task_config/xense.yml` | RGB, marker RGB, marker motion, depth, pose |
-| Neote | `neote` | `task_config/neote.yml`, `task_config/neote_force_field.yml` | Gel-particle or dense force-field exports |
+<p align="center">
+  <a href="#highlights">Highlights</a> &nbsp;|&nbsp;
+  <a href="#benchmark">Benchmark</a> &nbsp;|&nbsp;
+  <a href="#openvtla">OpenVTLA</a> &nbsp;|&nbsp;
+  <a href="#results">Results</a> &nbsp;|&nbsp;
+  <a href="#quick-start">Quick start</a> &nbsp;|&nbsp;
+  <a href="#documentation">Documentation</a> &nbsp;|&nbsp;
+  <a href="#citation">Citation</a>
+</p>
 
-The two Neote YAML files select different exports from the same Neote sensor;
-they are not separate sensors. Neote's conventional RGB/marker observations
-remain available in the sensor implementation, but the supplied configurations
-focus on its two distinctive representations: gel particles and force fields.
+<p align="center">
+  <a href="docs/media/teaser.png"><img src="docs/media/teaser.png" width="100%" alt="OpenViTac overview: paired simulation and real-world tasks, four tactile capabilities, three sensor types, and comparative policy evaluation."></a>
+  <br>
+  <sub>One benchmark. Paired simulation and reality. Four dimensions of touch.</sub>
+</p>
 
-## Installation
+**OpenViTac** is a visuo-tactile manipulation benchmark for evaluating robot policies across simulation and the real world. It brings physical properties, fragile objects, sustained contact, and precise insertion into a shared evaluation framework for **VLA**, **WAM**, and **VTLA** policies.
 
-### Requirements
+Building on the benchmark, **OpenVTLA** adapts a pretrained vision-language-action model to touch through a temporally aware tactile encoder and token-level integration. Paired simulation and real-world settings also enable the study of sim-real co-training.
 
-- Ubuntu Linux with an NVIDIA GPU and a compatible driver
-- Python 3.10
-- CUDA 12.4-compatible PyTorch
-- NVIDIA Isaac Sim 4.5.0 and Isaac Lab 2.1.1
-- cuRobo for GPU-accelerated motion planning
-- the modified TacEx/UIPC source included under `third_party/TacEx`
+<details>
+<summary><strong>Authors and affiliations</strong></summary>
 
-Do not replace the bundled TacEx/UIPC packages with the public TacEx release;
-OpenViTac relies on project-specific sensor, force-field, and UIPC changes.
+Yifan Wu<sup>1,*</sup>, Qin Li<sup>3,*</sup>, Nan Min<sup>1,*</sup>, Guojin Zhong<sup>1,†</sup>, Haoyu Zhao<sup>1,†</sup>, Zhiyuan Li<sup>1</sup>, Houze Xu<sup>1</sup>, Shengqi Xu<sup>1</sup>, Xingyao Lin<sup>1</sup>, Zijie Diao<sup>1,2</sup>, Zhaoxiang Liu<sup>6</sup>, Shiguo Lian<sup>6</sup>, Shunlin Lu<sup>5</sup>, Shihao Zhao<sup>5</sup>, Ziyi Ye<sup>1,‡</sup>, Zuxuan Wu<sup>1,2,5,‡</sup>, Yu-Gang Jiang<sup>1</sup>
 
-### Automated setup
+<sup>1</sup> Fudan University · <sup>2</sup> Shanghai Innovation Institute · <sup>3</sup> Hefei University of Technology · <sup>5</sup> Neote AI · <sup>6</sup> China Unicom
+
+<sup>*</sup> Equal contribution. <sup>†</sup> Project leaders. <sup>‡</sup> Corresponding authors.
+
+</details>
+
+## Highlights
+
+| Simulation tasks | Paired real-world tasks | Tactile capabilities | Tactile sensor types |
+| :---: | :---: | :---: | :---: |
+| **11** | **8** | **4** | **3** |
+
+- **Evaluate what vision misses.** Test physical-property perception, fragility-aware interaction, contact-rich manipulation, and precision manipulation under task-specific success criteria.
+- **Connect simulation with reality.** Corresponding assets and task configurations support comparative evaluation across domains, with two gripper setups and three tactile sensor types.
+- **Study how touch enters a policy.** Compare four tactile representations and five integration strategies for adapting pretrained VLAs.
+- **Collect, learn, and evaluate.** Scripted experts, multimodal HDF5 trajectories, local learning workflows, and remote policy adapters share task and observation interfaces.
+
+## Benchmark
+
+The paper's task suite spans four complementary capabilities. **All 11 tasks are evaluated in simulation; eight have paired real-world evaluations.**
+
+| Capability | What it tests | Simulation tasks | Paired real-world tasks |
+| :--- | :--- | :--- | :--- |
+| **Property perception** | Infer physical properties that are visually ambiguous | Weight classification, hardness classification, roughness classification, roughness-guided regrasp, empty-can selection | Roughness classification, empty-can selection |
+| **Fragility-aware** | Regulate contact without damaging delicate objects | Grasp chip | Grasp chip |
+| **Contact-rich** | Maintain effective contact during manipulation | Gear assembly, pull drawer | Gear assembly, pull drawer |
+| **Precision** | Align and insert under tight geometric tolerances | Insert USB, insert block v1, insert block v2 | Insert USB, insert block v1, insert block v2 |
+
+<details>
+<summary><strong>View the capability taxonomy</strong></summary>
+
+<p align="center">
+  <img src="docs/media/capability_taxonomy.png" width="760" alt="Taxonomy of the four tactile capabilities and their benchmark tasks.">
+</p>
+
+</details>
+
+Task implementations live in [`envs/`](envs/); sensor configurations live in [`task_config/`](task_config/). The repository also includes additional manipulation scenarios beyond the paper suite. The default batch collection list is an eight-task development suite; select tasks explicitly for benchmark experiments and use the intended task conditions.
+
+### From real-world references to simulation
+
+An agent-assisted pipeline reconstructs task-relevant assets and builds corresponding simulation tasks. Scene diversification varies backgrounds, workspace appearance, and surrounding context while preserving the task configuration.
+
+<p align="center">
+  <a href="docs/media/real_sim_alignment.png"><img src="docs/media/real_sim_alignment.png" width="100%" alt="Agent-assisted real-to-sim alignment: reconstructing objects and constructing corresponding simulation tasks from real-world references."></a>
+</p>
+
+<details>
+<summary><strong>Explore scene diversity</strong></summary>
+
+<p align="center">
+  <img src="docs/media/scene_diversity.png" width="100%" alt="A manipulation scene rendered with different backgrounds and workspace appearances.">
+</p>
+
+</details>
+
+### Three sensors, a common workflow
+
+| Sensor | Configuration | Tactile observations |
+| :--- | :--- | :--- |
+| **GelSight** | [`gelsight.yml`](task_config/gelsight.yml) | RGB, marker RGB, marker motion, depth, pose |
+| **Xense** | [`xense.yml`](task_config/xense.yml) | RGB, marker RGB, marker motion, depth, pose |
+| **Neote** | [`neote.yml`](task_config/neote.yml) / [`neote_force_field.yml`](task_config/neote_force_field.yml) | Gel-particle or dense force-field exports |
+
+The two Neote configurations select different representations from the same sensor. See the [configuration guide](docs/Usage.md#task-config-hyperparameters) for export settings and policy input requirements.
+
+## OpenVTLA
+
+**Temporal touch, integrated early.** OpenVTLA uses **AnyTouch2** to encode tactile history into compact tokens, projects them to the VLM hidden dimension, and prepends them to the visual token sequence of **π₀.₅**. It preserves the original vision-language and action-generation pathway without an additional fusion module or tactile-specific expert.
+
+<p align="center">
+  <a href="docs/media/tactile_design.png"><img src="docs/media/tactile_design.png" width="100%" alt="Tactile adaptation design space: four tactile representations and five integration strategies for pretrained VLAs."></a>
+  <br>
+  <sub>What should touch represent, and where should it enter the policy?</sub>
+</p>
+
+The repository includes an [OpenPI vision/tactile client](policy/openpi/README.md) and [deployment configurations](policy/openpi/abs_joint/). Remote-policy evaluation requires a separately configured model server and checkpoints. Model and dataset release links will be added when available.
+
+## Results
+
+**OpenVTLA achieves the highest reported average success rate among the evaluated policies in both domains.** The table below highlights tactile-enabled policies and the π₀.₅ backbone.
+
+| Policy | Family | Simulation success (%) | Real-world success (%) |
+| :--- | :---: | ---: | ---: |
+| **OpenVTLA (ours)** | VTLA | **68.7** | **54.6** |
+| FTP-1 | VTLA | 61.2 | 51.9 |
+| N0-VTLA | VTLA | 51.1 | 49.6 |
+| N0-TWAM | WAM | 53.3 | 48.5 |
+| π₀.₅ | VLA | 48.6 | 41.0 |
+
+*Reported manuscript results. Each policy is trained per task; averages are unweighted means across 11 simulation tasks or 8 real-world tasks. The two domain averages cover different task sets.*
+
+- **Sim-real consistency:** Pearson **r = 0.913** across nine policies with complete results on the eight shared tasks. OpenVTLA and FTP-1 rank first and second in both domains.
+- **Simulation supports real-world learning:** with **100 real demonstrations per task**, adding **500 simulated demonstrations** improves OpenVTLA from **20% to 40%** on USB insertion and **50% to 60%** on gear assembly.
+
+See the [project website](https://fvl-repo.github.io/OpenViTac/) for per-task comparisons and the complete evaluated policy set.
+
+## Quick start
+
+### Install
+
+**Environment:** Ubuntu Linux, an NVIDIA GPU, Python 3.10, CUDA 12.4-compatible PyTorch, Isaac Sim 4.5.0, and Isaac Lab 2.1.1. The installer sets up cuRobo and the bundled modified TacEx/UIPC packages.
 
 ```bash
-git clone --branch xense https://github.com/Apiecehann/OpenViTac.git
+git clone https://github.com/FVL-Repo/OpenViTac.git
 cd OpenViTac
 
-# Make sure conda is initialized before running the installer.
+# Initialize Conda in your shell before running the installer.
 conda activate base
 bash scripts/install.sh
 conda activate OpenViTac
 ```
 
-The installer creates the `OpenViTac` environment and installs Isaac Sim,
-Isaac Lab, cuRobo, TacEx, and libuipc. Building libuipc can take a substantial
-amount of time. For a component-by-component installation, see
-[`docs/Installation.md`](docs/Installation.md).
+Use the bundled `third_party/TacEx` source: OpenViTac depends on project-specific sensor and simulation changes. Building libuipc can take substantial time. See the [installation guide](docs/Installation.md) for the component-by-component setup.
 
-After installation, run a one-episode smoke collection from the repository
-root:
+### Collect a first demonstration
+
+From the repository root, try one successful USB-insertion episode with GelSight observations over seeds 0 through 4:
 
 ```bash
-CONDA_ENV=OpenViTac \
-GPU=0 \
-MODALITIES=gelsight \
-TASKS=grasp_in_clutter \
-START_SEED=0 \
-MAX_SEED=0 \
-EPISODE_NUM=1 \
-bash bash_scripts/collect_data.sh
+python scripts/collect_data.py insert_USB task_config/gelsight.yml \
+  --gpu 0 \
+  --start_seed 0 \
+  --max_seed 4 \
+  --episode_num 1
 ```
 
-## Task Suite
+The supplied GelSight configuration writes to `data_gelsight/insert_USB/gelsight/`. Successful episodes include HDF5 trajectories and preview videos; failed attempts are recorded for resumable collection. If no attempt succeeds within the seed range, increase `--max_seed`.
 
-The current benchmark contains eight contact-rich manipulation tasks. Task
-logic lives in `envs/`, while task assets are stored in
-`assets/objects/task_assets/`.
+For larger runs and policy learning, continue with:
 
-| Task module | Category | Objective |
-|---|---|---|
-| `grasp_in_clutter` | Grasping | Find and grasp a target half-cylinder among distractors |
-| `insert_block` | Insertion | Grasp a half-cylinder and insert it into the matching opening |
-| `insert_USB` | Precision insertion | Grasp and insert a USB connector into a target slot |
-| `place_cube_on_colored_area` | Pick and place | Move a wooden cube onto a marked target region |
-| `pour_ball_to_cup` | Non-rigid/contact-rich | Grasp a cup, carry it, and pour balls into another cup |
-| `pull_drawer` | Articulated manipulation | Grasp a handle and pull the drawer open |
-| `move_cup` | Rearrangement | Reorder cups while maintaining stable tactile contact |
-| `turn_gear_pair` | Rotational manipulation | Grasp and rotate a gear pair to the target state |
+- [Serial, balanced, and parallel data collection](docs/Usage.md#data-collection)
+- [HDF5 observation schema](docs/Collection.md)
+- [ACT preprocessing and training](docs/Usage.md#training)
+- [Policy rollout and evaluation](docs/Usage.md#inference--rollout)
 
-All task modules use the same reset, observation, demonstration, and policy
-interfaces. Sensor-specific contact calibration is resolved in Python, so the
-public YAML files remain compact. A task/sensor pair should still be validated
-before a large collection because contact geometry and deformation differ
-across sensors.
+> **Data paths:** ACT preprocessing expects `data/<task>/<config>`. When preparing ACT datasets, set `save_dir: ./data` in the collection configuration or provide a link to your collected dataset, as described in the workflow guide.
 
-## Data Collection
+## Documentation
 
-OpenViTac supports two complementary collection workflows.
+| I want to… | Start here |
+| :--- | :--- |
+| Set up the simulator and dependencies | [Installation](docs/Installation.md) |
+| Collect data, configure sensors, and train ACT | [Workflow guide](docs/Usage.md) |
+| Understand observations and saved trajectories | [Data collection and schema](docs/Collection.md) |
+| Add a task | [Task creation](docs/TaskCreation.md) |
+| Connect a new policy | [Policy deployment](docs/Deploy.md) |
+| Generate diverse trajectories with RFCL | [RL-based data collection](docs/RLDataCollection.md) |
+| Use an existing policy adapter | [OpenPI](policy/openpi/README.md), [FTP-1](policy/ftp-1/README.md), [N0-VTLA](policy/n0-vtla/README_commands.md), [InternVLA-A1.5](policy/internvla_a1_5/README_commands.md) |
 
-### Motion planning and randomized demonstrations
-
-This is the primary implemented data-generation pipeline. A scripted expert
-combines task logic with cuRobo motion planning. Each seed randomizes supported
-object poses, task targets, and textures; only successful demonstrations are
-kept. Failed seeds are recorded in `suc_map.txt`, allowing interrupted runs to
-resume without repeating completed work.
-
-Serial collection:
-
-`bash_scripts/collect_data.sh` reads its configuration from environment
-variables. Selected modality/task pairs run sequentially. Without `MODALITIES`
-or `TASKS` overrides, it runs the complete four-modality, eight-task suite.
-
-```bash
-CONDA_ENV=<conda_env> \
-GPU=<gpu_id> \
-MODALITIES="<modality ...>" \
-TASKS="<task_name ...>" \
-START_SEED=<start_seed> \
-MAX_SEED=<max_seed> \
-EPISODE_NUM=<successful_episodes_per_pair> \
-bash bash_scripts/collect_data.sh
-```
-
-Example:
-
-```bash
-CONDA_ENV=OpenViTac \
-GPU=0 \
-MODALITIES=xense \
-TASKS=grasp_in_clutter \
-START_SEED=0 \
-MAX_SEED=999 \
-EPISODE_NUM=100 \
-bash bash_scripts/collect_data.sh
-```
-
-Benchmark baseline task scripts:
-
-Four multi-object benchmark tasks provide dedicated baseline collection scripts
-that explicitly enumerate target/layout or target/order conditions. These
-scripts keep the original per-episode reset noise, but group outputs by semantic
-condition with `save_dir_exact` so each subset is easy to inspect and train on.
-
-| Task | Script | Default successful demonstrations |
-|---|---|---:|
-| `insert_block` | `bash_scripts/collect_insert_block_balanced.sh` | `3 targets x 4 layouts x 20 = 240` |
-| `grasp_in_clutter` | `bash_scripts/collect_grasp_in_clutter_baseline.sh` | `3 targets x 4 layouts x 20 = 240` |
-| `move_cup` | `bash_scripts/collect_move_cup_baseline.sh` | `4 semantic variants x 3 layouts x 20 = 240` |
-| `place_cube_on_colored_area` | `bash_scripts/collect_place_cube_on_colored_area_baseline.sh` | `4 target/order cases x 50 = 200` |
-
-Run one sensor modality at a time. The common commands are:
-
-```bash
-MODALITY=gelsight CONFIG=task_config/gelsight.yml GPU=0 bash <baseline_script>
-MODALITY=xense CONFIG=task_config/xense.yml GPU=1 bash <baseline_script>
-MODALITY=neote CONFIG=task_config/neote.yml GPU=2 bash <baseline_script>
-```
-
-For example:
-
-```bash
-MODALITY=gelsight CONFIG=task_config/gelsight.yml GPU=0 \
-bash bash_scripts/collect_grasp_in_clutter_baseline.sh
-
-MODALITY=xense CONFIG=task_config/xense.yml GPU=1 \
-bash bash_scripts/collect_move_cup_baseline.sh
-
-MODALITY=neote CONFIG=task_config/neote.yml GPU=2 \
-bash bash_scripts/collect_place_cube_on_colored_area_baseline.sh
-```
-
-The baseline scripts write to semantic subdirectories under `data/`:
+<details>
+<summary><strong>Repository map</strong></summary>
 
 ```text
-data/insert_block/<modality>/<target>/
-data/grasp_in_clutter/<modality>/<target>/
-data/move_cup/<modality>/<target>/<side>_of_<reference>/
-data/place_cube_on_colored_area/<modality>/<target_area>/<frame_order>/
+OpenViTac/
+├── envs/              # Tasks, robots, cameras, and tactile sensors
+├── task_config/       # Sensor observations and task settings
+├── assets/            # Robot, object, and scene assets
+├── asset_tools/       # Asset-processing utilities
+├── scripts/           # Collection, evaluation, installation, and RFCL
+├── bash_scripts/      # Batch workflows and task-specific conditions
+├── policy/            # Local learning baselines and remote policy clients
+├── encoder/           # Tactile representation learning
+├── docs/              # Guides and project figures
+├── tests/             # Task and learning workflow tests
+└── third_party/       # Bundled simulation dependencies
 ```
 
-Use `DRY_RUN=1` to print the planned sub-runs without launching Isaac Sim, and
-press `Ctrl-C` once to stop the current planner run and exit the outer loop.
+</details>
 
-Parallel collection launches one Isaac Sim application per worker:
+## Citation
 
-```bash
-python scripts/parallel_collect_data.py \
-  grasp_in_clutter xense \
-  --workers 2 --episodes 100 --gpu 0
+If OpenViTac is useful for your research, please consider citing our work. This is a preliminary citation; publication details will be added with the paper release.
+
+```bibtex
+@misc{wu2026openvitac,
+  title={OpenViTac: Learning and Benchmarking Visuo-Tactile
+         Policies in a Unified Sim-and-Real Framework},
+  author={Wu, Yifan and Li, Qin and Min, Nan and Zhong, Guojin
+          and Zhao, Haoyu and Li, Zhiyuan and Xu, Houze
+          and Xu, Shengqi and Lin, Xingyao and Diao, Zijie
+          and Liu, Zhaoxiang and Lian, Shiguo and Lu, Shunlin
+          and Zhao, Shihao and Ye, Ziyi and Wu, Zuxuan
+          and Jiang, Yu-Gang},
+  year={2026}
+}
 ```
 
-Choose the worker count according to available GPU memory. UIPC tactile scenes
-are substantially heavier than ordinary rigid-body simulation, so more workers
-do not always improve throughput.
+---
 
-### RFCL diversity collection
-
-RFCL learns from successful Motion Plan suffixes with a binary reward, then
-generates alternative successful interaction trajectories. Motion Plan supplies
-the stable task prefix; selected RL suffixes are re-recorded with RGB and tactile
-observations and joined to their corresponding prefixes. The current reference
-implementation is `Insert_USB`.
-
-See [`RL-based Data Collection`](docs/RLDataCollection.md) for the complete
-workflow and distributed commands.
-
-The output layout is:
-
-```text
-<save_dir>/<task_name>/<task_config>/
-├── hdf5/          # one HDF5 trajectory per successful seed
-├── video/         # synchronized camera/tactile preview videos
-├── metadata.json  # task, timing, instruction, and sensor metadata
-├── suc_map.txt    # success/failure state for resumable collection
-└── scene/         # UIPC workspace and scene cache
-```
-
-When `save_pre_move: true`, demonstrations include both the expert pre-move and
-the learned-policy phase. The HDF5 field `phase/id` identifies these phases;
-the current ACT preprocessor trains on action-phase transitions only. See
-[`docs/Collection.md`](docs/Collection.md) for the data schema.
-
-## Task Config Hyperparameters
-
-Active sensor configurations are stored in `task_config/`:
-
-| Config | Sensor | Intended export |
-|---|---|---|
-| `gelsight.yml` | GelSight | Marker-based optical tactile observations |
-| `xense.yml` | Xense | Marker-based optical tactile observations |
-| `neote.yml` | Neote | Gel-particle tactile images |
-| `neote_force_field.yml` | Neote | Raw force fields plus force-field images |
-
-All four files expose the same compact set of top-level keys.
-
-| Parameter | Description |
-|---|---|
-| `save_dir` | Root directory for a collection. The task name and YAML stem are appended automatically. ACT preprocessing currently expects `./data/<task>/<config>`; use `save_dir: ./data` or create a link when collecting elsewhere. |
-| `decimation` | Number of physics steps represented by one environment/control step. Increasing it changes control timing and contact dynamics, so it should not be treated as a simple performance knob. |
-| `save_frequency` | Saves one observation/action sample every N simulation steps. This determines the temporal spacing of the demonstration dataset. |
-| `video_frequency` | Writes one preview-video frame every N steps. Larger values reduce video I/O; use `0` only in entry points that explicitly support disabling video. |
-| `render_frequency` | Project convention for application rendering: `0` for collection without an interactive Isaac Sim window, `1` for an interactive window. Camera and tactile sensors still perform the rendering required for observations. |
-| `random_texture` | Enables supported texture-domain randomization. Geometry and task-goal randomization remain controlled by each task and its seed. |
-| `use_seed` | Enables deterministic seed-based episode randomization and resumable collection through `suc_map.txt`. |
-| `episode_num` | Default number of successful episodes. Serial and parallel CLI arguments can override it. Failed attempts do not count toward this target. |
-| `sensor_type` | Selects `gsmini`, `xensews`, or `neote`. Both Neote YAML files use the same `neote` sensor type. |
-| `observations` | Selects camera, tactile, embodiment, and actor streams written to HDF5. Removing a stream reduces storage, but the selected policy and preprocessor must not expect it. |
-| `save_pre_move` | Saves the motion-planned pre-move before policy control. Keep it enabled for full demonstrations; use `phase/id` when training only on the action phase. |
-| `tactile_video_key` | Chooses the tactile stream shown in preview videos: `rgb_marker` for GelSight/Xense, `gel_particle` for Neote particles, and `force_field_img` for Neote force fields. |
-
-Typical tactile exports are:
-
-- GelSight/Xense: `rgb`, `rgb_marker`, `marker`, `depth`, and `pose`.
-- Neote particle mode: `rgb`, `gel_particle`, `depth`, and `pose`.
-- Neote force-field mode: `rgb`, `force_field`, `force_field_img`, `depth`, and `pose`.
-
-`force_field` is a numeric `(H, W, 3)` vector field. `force_field_img` is its
-visualization and is the appropriate input for image-based ACT encoders.
-
-Sensor-specific runtime parameters are intentionally hidden from the public
-YAML interface. Video resolution, reset timing, Neote force-field resolution,
-and calibrated Xense contact/task parameters are centralized in
-`envs/_base_task.py`. Change them only when recalibrating a sensor or task.
-
-## Training
-
-### Dataset preprocessing
-
-The implemented ACT pipeline converts raw trajectories into policy-specific
-HDF5 episodes. Run preprocessing from `policy/ACT`:
-
-```bash
-cd policy/ACT
-python process_data.py <task_name> <task_config> <episode_num>
-```
-
-The default tactile input is `rgb_marker` for GelSight/Xense and
-`gel_particle` for `neote`. Select another exported image explicitly:
-
-```bash
-TACTILE_KEY=force_field_img \
-python process_data.py <task_name> neote_force_field <episode_num>
-```
-
-The current ACT preprocessor consumes image-like tactile observations. Policies
-that use the raw numeric Neote `force_field` tensor require a dedicated tensor
-adapter; this remains TODO for the common baseline interface.
-
-### Baselines
-
-The benchmark roadmap separates code that is currently runnable from planned
-baseline integrations.
-
-| Baseline | Status | Notes |
-|---|---|---|
-| ACT | Implemented | Main imitation-learning baseline with vision, tactile, or fused inputs |
-| Diffusion Policy | TODO | Unified preprocessing, checkpointing, and rollout integration are still required |
-| π0.5 | TODO | Planned vision-language-action baseline with tactile token/feature adapters |
-| LingBot-VLA | TODO | Planned VLA baseline; model loading and action-head integration are not yet in the common policy interface |
-| StarVLA | TODO | Planned VLA baseline with the same task/config/rollout protocol |
-| VTLA baseline(s) | TODO | One or two vision-tactile-language-action baselines will be selected and integrated |
-
-Train the implemented ACT baseline:
-
-```bash
-cd policy/ACT
-bash train.sh \
-  <task_name> <task_config> <episode_num> \
-  <seed> <gpu_id> [train_config]
-```
-
-The default `train_config.yml` uses ResNet-18 visual and tactile backbones with
-ACT temporal action chunks. Alternative supplied configurations include
-vision-only, tactile-focused, frozen-backbone, scratch, and multi-camera
-variants. Checkpoints are written below:
-
-```text
-policy/ACT/act_ckpt/act-<task_name>/<task_config>-<episode_num>/<train_config>/
-```
-
-### Ablations
-
-The ablation framework is implemented under `policy/Ablation` and follows the
-same preprocessing and training pattern as ACT:
-
-```bash
-cd policy/Ablation
-python process_data.py <task_name> <task_config> <episode_num>
-bash train.sh \
-  <task_name> <task_config> <episode_num> \
-  <seed> <gpu_id> <ablation_config>
-```
-
-Supported or partially supported study axes include:
-
-- **Input modality:** vision-only, tactile-only, or vision-tactile fusion;
-  head-camera versus head-and-wrist-camera inputs.
-- **Visual encoder:** ResNet-18 is the current default, with additional ResNet
-  variants available in the ACT backbone code. A unified interface for
-  ViT/CLIP/DINO and VLA visual encoders is TODO.
-- **Tactile encoder:** the current OpenViTac tactile ResNet encoder is integrated
-  and can be frozen, fine-tuned, or trained from scratch. A contrastive visual-tactile
-  encoder option is planned for future work. Additional sensor-specific encoders for GelSight, Xense, and
-  both Neote exports will be pretrained and standardized in future work.
-- **Tactile supervision:** existing configurations cover marker-RGB-only,
-  marker RGB plus depth, shape pathway, contact pathway, and joint
-  contact-shape supervision.
-- **Initialization:** pretrained versus scratch, frozen versus trainable
-  tactile backbones, and different learning rates for visual/tactile branches.
-- **Data scale:** supplied configurations cover several demonstration counts,
-  enabling sample-efficiency studies.
-
-Important existing ablation files include `marked_rgb_only.yml`,
-`marked_rgb_depth.yml`, `shape_pathway.yml`, `contact_pathway.yml`,
-`contact_shape.yml`, and `from_scrach.yml`. Some filenames retain their legacy
-spelling for checkpoint compatibility.
-
-## Inference / Rollout
-
-### Imitation-policy rollout
-
-Deployment uses a policy module under `policy/<PolicyName>/` and a deployment
-YAML containing `policy_name`. The provided ACT entry point automatically
-derives its checkpoint path from the task, sensor config, episode count, and
-training config.
-
-Serial ACT evaluation:
-
-```bash
-EP_NUM=50 TRAIN_CONFIG=train_config \
-bash eval_policy.sh \
-  <task_name> <task_config> ACT/deploy <gpu_id>
-```
-
-For Neote, keep the rollout tactile input consistent with training:
-
-```bash
-TACTILE_KEY=gel_particle \
-EP_NUM=50 TRAIN_CONFIG=train_config \
-bash eval_policy.sh <task_name> neote ACT/deploy 0
-
-TACTILE_KEY=force_field_img \
-EP_NUM=50 TRAIN_CONFIG=train_config \
-bash eval_policy.sh <task_name> neote_force_field ACT/deploy 0
-```
-
-Parallel evaluation:
-
-```bash
-bash parallel_eval.sh \
-  <task_name> <task_config> ACT/deploy \
-  <gpu_id> <workers> <total_episodes>
-```
-
-Rollouts are written under:
-
-```text
-eval_result/<policy_name>/<task_name>/<deploy_config>/<timestamp>/
-```
-
-The evaluator supports deterministic seed ranges, optional expert-seed checks,
-success-rate logging, HDF5/video outputs, and serial or multiprocessing
-evaluation. To add a new baseline, implement `Policy.encode_obs`,
-`Policy.eval`, and `Policy.reset` against policy._base_policy.BasePolicy, then
-provide a deployment YAML. See [docs/Deploy.md](docs/Deploy.md).
+Questions, reproducibility issues, or new task ideas? [Open an issue](https://github.com/FVL-Repo/OpenViTac/issues).

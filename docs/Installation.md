@@ -5,7 +5,7 @@
 Clone OpenViTac and run `scripts/install.sh` to set up the environment and install Isaac Sim, Isaac Lab, TacEx, cuRobo, and the other required packages. The current installer retains the legacy `OpenViTac` Conda environment name for compatibility.
 
 ```bash
-git clone https://github.com/Apiecehann/OpenViTac.git
+git clone https://github.com/FVL-Repo/OpenViTac.git
 cd OpenViTac
 bash scripts/install.sh
 ```
@@ -25,7 +25,7 @@ bash scripts/install.sh
 #### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/Apiecehann/OpenViTac.git
+git clone https://github.com/FVL-Repo/OpenViTac.git
 cd OpenViTac
 ```
 
