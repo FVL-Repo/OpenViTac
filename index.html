@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="OpenViTac: a unified simulation and real-world benchmark for visuo-tactile robot manipulation. Explore 11 tasks, four tactile capabilities, and OpenVTLA."
+    />
+    <meta
+      property="og:title"
+      content="OpenViTac | Learning and Benchmarking Visuo-Tactile Policies"
+    />
+    <meta
+      property="og:description"
+      content="A unified sim-and-real framework for learning, evaluating, and advancing robots that see and touch."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/teaser.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>OpenViTac | A Unified Sim-and-Real Visuo-Tactile Benchmark</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="assets/fonts/space-grotesk-v22-latin_latin-ext-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site-config.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="Main navigation">
+        <a class="wordmark" href="#" aria-label="OpenViTac home"
+          >OpenViTac</a
+        >
+        <div class="nav-links">
+          <a href="#overview">Overview</a><a href="#benchmark">Benchmark</a
+          ><a href="#openvtla">OpenVTLA</a><a href="#results">Results</a>
+          <!-- Demo navigation temporarily disabled.
+          <a href="#demos">Demos</a>
+          -->
+        </div>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="project-title">
+        <p class="hero-label">
+          A unified benchmark for robots that see and touch
+        </p>
+        <h1 id="project-title">OpenViTac</h1>
+        <p class="paper-title">
+          Learning and Benchmarking Visuo-Tactile Policies<br
+            class="desktop-break"
+          />
+          in a Unified Sim-and-Real Framework
+        </p>
+        <div class="authors" aria-label="Authors">
+          <span>Yifan Wu<sup>1,*</sup></span
+          ><span>Qin Li<sup>3,*</sup></span
+          ><span>Nan Min<sup>1,*</sup></span
+          ><span>Guojin Zhong<sup>1,†</sup></span
+          ><span>Haoyu Zhao<sup>1,†</sup></span
+          ><span>Zhiyuan Li<sup>1</sup></span
+          ><span>Houze Xu<sup>1</sup></span
+          ><span>Shengqi Xu<sup>1</sup></span
+          ><span>Xingyao Lin<sup>1</sup></span
+          ><span>Zijie Diao<sup>1,2</sup></span
+          ><span>Zhaoxiang Liu<sup>6</sup></span
+          ><span>Shiguo Lian<sup>6</sup></span
+          ><span>Shunlin Lu<sup>5</sup></span
+          ><span>Shihao Zhao<sup>5</sup></span
+          ><span>Ziyi Ye<sup>1</sup></span
+          ><span>Zuxuan Wu<sup>1,2,5</sup></span
+          ><span>Yu-Gang Jiang<sup>1</sup></span>
+        </div>
+        <div class="affiliations">
+          <span><sup>1</sup> Fudan University</span
+          ><span><sup>2</sup> Shanghai Innovation Institute</span
+          ><span><sup>3</sup> Hefei University of Technology</span
+          ><span><sup>5</sup> Neote AI</span
+          ><span><sup>6</sup> China Unicom</span>
+        </div>
+        <p class="contributions">
+          * Equal contribution <span>† Project leaders</span>
+        </p>
+        <div
+          class="resource-links"
+          id="resource-links"
+          aria-label="Project resources"
+        ></div>
+        <noscript
+          ><p>
+            <a href="https://arxiv.org/pdf/2610.10384v1" target="_blank" rel="noopener">Read the paper</a>.
+            Enable JavaScript to explore tasks and results.
+          </p></noscript
+        >
+      </section>
+
+      <section
+        class="overview wrap"
+        id="overview"
+        aria-labelledby="overview-title"
+      >
+        <figure class="teaser-figure">
+          <a
+            class="figure-link"
+            href="assets/teaser.png"
+            target="_blank"
+            rel="noopener"
+            aria-label="Open the benchmark overview figure at full resolution"
+            ><img
+              src="assets/teaser.webp"
+              srcset="assets/teaser-800.webp 800w, assets/teaser.webp 2000w"
+              sizes="(max-width: 767px) calc(100vw - 36px), 1040px"
+              width="2000"
+              height="1446"
+              fetchpriority="high"
+              alt="OpenViTac overview: paired simulated and real tasks, four tactile capabilities, two gripper setups, three tactile sensors, and policy evaluation."
+          /></a>
+          <figcaption>
+            One benchmark. Paired simulation and reality. Four dimensions of
+            touch.
+          </figcaption>
+        </figure>
+        <div class="overview-copy">
+          <h2 id="overview-title">Beyond what vision can tell.</h2>
+          <p>
+            Weight, texture, fragility, and contact are often hidden from a
+            camera. <strong>OpenViTac</strong> brings these physical challenges
+            into a unified benchmark, with corresponding simulation and
+            real-world tasks for evaluating vision-language-action,
+            world-action, and vision-tactile-language-action policies.
+          </p>
+          <p>
+            Alongside the benchmark, we introduce <strong>OpenVTLA</strong>: a
+            practical way to adapt pretrained VLA models to touch, and study how
+            simulated experience can improve real-world manipulation.
+          </p>
+        </div>
+        <dl class="benchmark-facts">
+          <div>
+            <dt>Simulation tasks</dt>
+            <dd>11</dd>
+          </div>
+          <div>
+            <dt>Paired real-world tasks</dt>
+            <dd>8</dd>
+          </div>
+          <div>
+            <dt>Tactile capabilities</dt>
+            <dd>4</dd>
+          </div>
+          <div>
+            <dt>Tactile sensor types</dt>
+            <dd>3</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section
+        class="section tinted"
+        id="benchmark"
+        aria-labelledby="benchmark-title"
+      >
+        <div class="wrap">
+          <div class="section-heading">
+            <h2 id="benchmark-title">Put touch to the test.</h2>
+            <p>
+              From recognizing an object's physical properties to making a
+              precise insertion, each task isolates a reason to feel.
+            </p>
+          </div>
+          <div
+            class="filter-list"
+            id="task-filters"
+            role="group"
+            aria-label="Filter tasks by capability"
+          ></div>
+          <div class="task-browser">
+            <div
+              class="task-list"
+              id="task-list"
+              role="group"
+              aria-label="Benchmark tasks"
+            ></div>
+            <article
+              class="task-detail"
+              id="task-detail"
+              aria-live="polite"
+              aria-atomic="true"
+            ></article>
+          </div>
+          <details class="figure-disclosure">
+            <summary>See the complete capability taxonomy</summary>
+            <a
+              href="assets/capability_taxonomy.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="assets/capability_taxonomy.webp"
+                srcset="
+                  assets/capability_taxonomy-800.webp  800w,
+                  assets/capability_taxonomy.webp     1600w
+                "
+                sizes="(max-width: 767px) calc(100vw - 36px), 780px"
+                width="1600"
+                height="1596"
+                loading="lazy"
+                alt="Taxonomy organizing benchmark tasks by physical-property perception, fragility-aware, contact-rich, and precision capabilities."
+            /></a>
+          </details>
+        </div>
+      </section>
+
+      <section
+        class="section wrap"
+        id="sim-real"
+        aria-labelledby="sim-real-title"
+      >
+        <div class="section-heading">
+          <h2 id="sim-real-title">From the real world, into simulation.</h2>
+          <p>
+            Aligned objects, scenes, and task configurations connect virtual
+            evaluation with physical manipulation.
+          </p>
+        </div>
+        <figure>
+          <a
+            class="figure-link figure-rounded"
+            href="assets/real_sim_alignment.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="assets/real_sim_alignment.webp"
+              srcset="
+                assets/real_sim_alignment-800.webp  800w,
+                assets/real_sim_alignment.webp     2000w
+              "
+              sizes="(max-width: 767px) calc(100vw - 36px), 1120px"
+              width="2000"
+              height="1013"
+              loading="lazy"
+              alt="Agent-assisted real-to-sim pipeline reconstructing assets from multi-view images and building corresponding tasks and trajectories."
+          /></a>
+          <figcaption>
+            Agent-assisted asset reconstruction and task construction preserve
+            task-relevant structure across domains.
+          </figcaption>
+        </figure>
+        <div class="alignment-notes">
+          <div>
+            <h3>Corresponding tasks</h3>
+            <p>
+              Eight shared tasks support comparison under matched manipulation
+              objectives in simulation and on real hardware.
+            </p>
+          </div>
+          <div>
+            <h3>Diverse environments</h3>
+            <p>
+              Backgrounds, workspace appearance, and surrounding context vary
+              while the underlying task configuration stays consistent.
+            </p>
+          </div>
+        </div>
+        <figure class="scene-figure">
+          <a
+            class="figure-link"
+            href="assets/scene_diversity.png"
+            target="_blank"
+            rel="noopener"
+            ><img
+              src="assets/scene_diversity.webp"
+              srcset="
+                assets/scene_diversity-800.webp  800w,
+                assets/scene_diversity.webp     2000w
+              "
+              sizes="(max-width: 767px) calc(100vw - 36px), 1120px"
+              width="2000"
+              height="402"
+              loading="lazy"
+              alt="The same manipulation scene across a range of simulated backgrounds and workspace appearances."
+          /></a>
+          <figcaption>
+            Scene diversification broadens the training distribution.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section
+        class="section tinted"
+        id="openvtla"
+        aria-labelledby="openvtla-title"
+      >
+        <div class="wrap">
+          <div class="section-heading">
+            <p class="section-kicker">Introducing OpenVTLA</p>
+            <h2 id="openvtla-title">Give a pretrained VLA a sense of touch.</h2>
+            <p>
+              A temporally aware tactile encoder. Early token-level integration.
+              The original vision-language and action pathway.
+            </p>
+          </div>
+          <figure>
+            <a
+              class="figure-link figure-white"
+              href="assets/tactile_design.png"
+              target="_blank"
+              rel="noopener"
+              ><img
+                src="assets/tactile_design.webp"
+                srcset="
+                  assets/tactile_design-800.webp  800w,
+                  assets/tactile_design.webp     2200w
+                "
+                sizes="(max-width: 767px) calc(100vw - 36px), 1120px"
+                width="2200"
+                height="963"
+                loading="lazy"
+                alt="Design space comparing four tactile representations and five integration strategies for adapting pretrained vision-language-action models."
+            /></a>
+            <figcaption>
+              We study what tactile information to represent, and where to
+              introduce it into a pretrained policy.
+            </figcaption>
+          </figure>
+          <div class="method-study">
+            <div class="method-copy">
+              <h3>Temporal touch, integrated early.</h3>
+              <p>
+                OpenVTLA uses <strong>AnyTouch2</strong> to encode tactile
+                history into compact tokens. These tokens are projected to the
+                VLM hidden dimension and prepended to the visual sequence of
+                <strong>π<sub>0.5</sub></strong
+                >.
+              </p>
+              <p>
+                Token-level concatenation lets touch participate from the VLM
+                input, without an additional fusion module or tactile-specific
+                expert.
+              </p>
+              <dl class="study-facts">
+                <div>
+                  <dt>Tactile representations studied</dt>
+                  <dd>4</dd>
+                </div>
+                <div>
+                  <dt>Integration strategies studied</dt>
+                  <dd>5</dd>
+                </div>
+              </dl>
+            </div>
+            <figure class="radar-figure">
+              <a
+                class="figure-link figure-white"
+                href="assets/tactile_radar.png"
+                target="_blank"
+                rel="noopener"
+                ><img
+                  src="assets/tactile_radar.webp"
+                  srcset="
+                    assets/tactile_radar-800.webp  800w,
+                    assets/tactile_radar.webp     1000w
+                  "
+                  sizes="(max-width: 767px) calc(100vw - 36px), 360px"
+                  width="1000"
+                  height="1214"
+                  loading="lazy"
+                  alt="Radar plot comparing tactile representations under a fixed token-level concatenation strategy."
+              /></a>
+              <figcaption>
+                Representation comparison with the same integration strategy.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section wrap"
+        id="results"
+        aria-labelledby="results-title"
+      >
+        <div class="section-heading">
+          <h2 id="results-title">Evaluate in sim. Validate in reality.</h2>
+          <p>
+            OpenVTLA achieves the highest average success rate among the
+            evaluated policies in both domains.
+          </p>
+        </div>
+        <div class="result-highlights">
+          <div>
+            <strong>68.7<span>%</span></strong>
+            <p>OpenVTLA in simulation</p>
+          </div>
+          <div>
+            <strong>54.6<span>%</span></strong>
+            <p>OpenVTLA on real hardware</p>
+          </div>
+          <div>
+            <strong>0.913</strong>
+            <p>Sim-real Pearson correlation</p>
+          </div>
+        </div>
+        <div class="results-toolbar">
+          <div class="segmented" role="group" aria-label="Evaluation domain">
+            <button type="button" data-domain="sim" aria-pressed="true">
+              Simulation</button
+            ><button type="button" data-domain="real" aria-pressed="false">
+              Real world
+            </button>
+          </div>
+          <button
+            type="button"
+            class="text-button"
+            id="expand-results"
+            aria-expanded="false"
+          >
+            Show all policies
+          </button>
+        </div>
+        <p class="result-context" id="result-context"></p>
+        <div
+          class="table-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="Policy success rates, horizontally scrollable"
+        >
+          <table id="results-table"></table>
+        </div>
+        <p class="table-note">
+          Success rates (%). Average is the unweighted mean across tasks. All
+          policies use single-task training. Full task names are available in
+          the column headings.
+        </p>
+        <div class="cotrain">
+          <div>
+            <h3>Simulation makes real data go further.</h3>
+            <p>
+              With 100 real demonstrations per task, adding 500 simulated
+              demonstrations raises OpenVTLA's average success by 15 percentage
+              points across USB insertion and gear assembly.
+            </p>
+          </div>
+          <div class="cotrain-data">
+            <table>
+              <caption>
+                OpenVTLA real-world success (%)
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Training data</th>
+                  <th scope="col">Insert USB</th>
+                  <th scope="col">Gear assembly</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">100 real</th>
+                  <td>20</td>
+                  <td>50</td>
+                </tr>
+                <tr>
+                  <th scope="row">100 real + 500 sim</th>
+                  <td><strong>40</strong></td>
+                  <td><strong>60</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Demo section temporarily disabled; restore together with app.js rendering.
+      <section class="section tinted" id="demos" aria-labelledby="demos-title">
+        <div class="wrap">
+          <div class="section-heading">
+            <h2 id="demos-title">See touch in action.</h2>
+            <p>
+              Task demonstrations and real-world policy rollouts. Videos are
+              coming soon.
+            </p>
+          </div>
+          <div class="demo-grid" id="demo-grid"></div>
+        </div>
+      </section>
+      -->
+
+      <section
+        class="section wrap citation-section"
+        id="citation"
+        aria-labelledby="citation-title"
+      >
+        <div>
+          <h2 id="citation-title">Citation</h2>
+          <p>
+            If you find OpenViTac useful for your research, please consider
+            citing this work.
+          </p>
+          <p class="citation-note">
+            Preliminary citation. Publication details will be added with the
+            paper release.
+          </p>
+        </div>
+        <div class="citation-box">
+          <div class="citation-toolbar">
+            <span>BibTeX</span
+            ><button type="button" id="copy-citation">Copy citation</button>
+          </div>
+          <pre><code id="bibtex">@misc{wu2026openvitac,
+  title={OpenViTac: Learning and Benchmarking Visuo-Tactile
+         Policies in a Unified Sim-and-Real Framework},
+  author={Wu, Yifan and Li, Qin and Min, Nan and Zhong, Guojin
+          and Zhao, Haoyu and Li, Zhiyuan and Xu, Houze
+          and Xu, Shengqi and Lin, Xingyao and Diao, Zijie
+          and Liu, Zhaoxiang and Lian, Shiguo and Lu, Shunlin
+          and Zhao, Shihao and Ye, Ziyi and Wu, Zuxuan
+          and Jiang, Yu-Gang},
+  year={2026}
+}</code></pre>
+          <p id="copy-status" class="sr-only" role="status"></p>
+        </div>
+      </section>
+    </main>
+    <footer class="wrap footer">
+      <a href="#" class="wordmark"
+        >OpenViTac</a
+      >
+      <p>Learning to manipulate with vision and touch.</p>
+      <a href="#main">Back to top</a>
+    </footer>
+  </body>
+</html>
