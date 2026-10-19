@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="OpenViTac: a unified simulation and real-world benchmark for visuo-tactile robot manipulation. Explore 11 tasks, four tactile capabilities, and OpenVTLA."
+    />
+    <meta
+      property="og:title"
+      content="OpenViTac | Learning and Benchmarking Visuo-Tactile Policies"
+    />
+    <meta
+      property="og:description"
+      content="A unified sim-and-real framework for learning, evaluating, and advancing robots that see and touch."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/teaser.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>OpenViTac | A Unified Sim-and-Real Visuo-Tactile Benchmark</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="assets/fonts/space-grotesk-v22-latin_latin-ext-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site-config.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <section class="showcase" id="showcase" aria-label="OpenViTac video highlights" aria-roledescription="carousel" tabindex="0">
+      <div class="showcase-slides" id="showcase-slides">
+        <article class="showcase-slide is-active" aria-label="1 of 4: Contact-rich manipulation" aria-roledescription="slide">
+          <video class="showcase-video" muted playsinline preload="none" poster="assets/demos/real/gear_assembly/standard/success/poster.webp" aria-label="A real robot assembles and turns a pair of gears"></video>
+          <div class="showcase-banner">
+            <h2>OpenViTac</h2>
+            <p class="showcase-category">Contact-rich manipulation</p>
+          </div>
+        </article>
+      </div>
+      <div class="showcase-footer">
+        <a class="showcase-explore" href="#main">Explore the benchmark <span aria-hidden="true">↓</span></a>
+        <div class="showcase-navigation">
+          <button class="showcase-arrow showcase-prev" type="button" aria-label="Previous video" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+          <div class="showcase-pagination" aria-label="Choose a highlight"></div>
+          <button class="showcase-arrow showcase-next" type="button" aria-label="Next video" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m10 5 7 7-7 7"/></svg></button>
+        </div>
+      </div>
+      <p class="sr-only" id="showcase-status" aria-live="polite" aria-atomic="true"></p>
+    </section>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="Main navigation">
+        <a class="wordmark" href="#" aria-label="OpenViTac home"
+          >OpenViTac</a
+        >
+        <div class="nav-links">
+          <a href="#overview">Overview</a><a href="#benchmark">Benchmark</a
+          ><a href="#openvtla">OpenVTLA</a><a href="#results">Results</a>
+          <!-- Demo navigation temporarily disabled.
+          <a href="#demos">Demos</a>
+          -->
+        </div>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="project-title">
+        <h1 id="project-title">OpenViTac</h1>
+        <p class="paper-title">
+          Learning and Benchmarking Visuo-Tactile Policies<br
+            class="desktop-break"
+          />
+          in a Unified Sim-and-Real Framework
+        </p>
+        <div class="authors" aria-label="Authors">
+          <span>Yifan Wu<sup>1,2,*</sup></span
+          ><span>Qin Li<sup>1,2,3,*</sup></span
+          ><span>Nan Min<sup>1,2,*</sup></span
+          ><span>Guojin Zhong<sup>1,2,†</sup></span
+          ><span>Haoyu Zhao<sup>4,†</sup></span
+          ><span>Zhiyuan Li<sup>1,2</sup></span
+          ><span>Houze Xu<sup>1,2</sup></span
+          ><span>Shengqi Xu<sup>1,2</sup></span
+          ><span>Xingyao Lin<sup>1,2</sup></span
+          ><span>Zijie Diao<sup>1,2</sup></span
+          ><span>Zhaoxiang Liu<sup>6</sup></span
+          ><span>Shiguo Lian<sup>6</sup></span
+          ><span>Shunlin Lu<sup>5</sup></span
+          ><span>Shihao Zhao<sup>5</sup></span
+          ><span>Ziyi Ye<sup>1,2</sup></span
+          ><span>Zuxuan Wu<sup>1,2,5</sup></span
+          ><span>Yu-Gang Jiang<sup>1,2</sup></span>
+        </div>
+        <div class="affiliations">
+          <span><sup>1</sup> Fudan University</span
+          ><span><sup>2</sup> Shanghai Key Laboratory of Multimodal Embodied AI</span
+          ><span><sup>3</sup> Hefei University of Technology</span
+          ><span><sup>4</sup> National University of Singapore</span
+          ><span><sup>5</sup> Neote AI</span
+          ><span><sup>6</sup> China Unicom</span>
+        </div>
+        <p class="contributions">
+          * Equal contribution <span>† Project leaders</span>
+        </p>
+        <div
+          class="resource-links"
+          id="resource-links"
+          aria-label="Project resources"
+        ></div>
+        <noscript
+          ><p>
+            <a href="https://arxiv.org/pdf/2610.10384v1" target="_blank" rel="noopener">Read the paper</a>.
+            Enable JavaScript to explore tasks and results.
+          </p></noscript
+        >
+      </section>
+
+      <section
+        class="overview wrap"
+        id="overview"
+        aria-labelledby="overview-title"
+      >
+        <figure class="teaser-figure">
+          <div class="figure-frame"><img
+              src="assets/teaser.webp"
+              srcset="assets/teaser-800.webp 800w, assets/teaser.webp 2000w"
+              sizes="(max-width: 767px) calc(100vw - 36px), 880px"
+              width="2000"
+              height="1446"
+              loading="lazy"
+              alt="OpenViTac overview: paired simulated and real tasks, four tactile capabilities, two gripper setups, three tactile sensors, and policy evaluation."
+          /></div>
+        </figure>
+        <div class="overview-copy">
+          <h2 id="overview-title">A unified real-sim benchmark for visuo-tactile manipulation</h2>
+          <p>
+            Touch helps robots judge an object's physical properties, control
+            their grip on fragile objects, and adjust their movements during
+            contact. Yet understanding how much it helps is difficult when
+            policies are tested with different tasks, sensors, and evaluation
+            protocols. <strong>OpenViTac</strong> provides a common benchmark
+            for studying these capabilities, with corresponding tasks in
+            simulation and the real world. It covers physical property
+            perception, handling fragile objects, contact-rich manipulation,
+            and precise insertion.
+          </p>
+          <p>
+            Using OpenViTac, we compare robot policies and study how to add
+            tactile feedback to pretrained vision-language-action models. We
+            examine both how touch is represented and where it enters the
+            policy, then combine the best-performing choices in
+            <strong>OpenVTLA</strong>. The paired tasks also let us study how
+            training with both simulated and real demonstrations affects
+            performance on real robots.
+          </p>
+        </div>
+      </section>
+
+      <section
+        class="section wrap"
+        id="sim-real"
+        aria-labelledby="sim-real-title"
+      >
+        <div class="section-heading">
+          <h2 id="sim-real-title">Overview of the OpenViTac benchmark</h2>
+        </div>
+        <figure class="design-figure" aria-labelledby="sim-real-title">
+          <div class="design-panels">
+            <div class="design-panel design-taxonomy">
+              <img
+                src="assets/capability_taxonomy.webp"
+                srcset="assets/capability_taxonomy-800.webp 800w, assets/capability_taxonomy.webp 1600w"
+                sizes="(max-width: 767px) calc(100vw - 36px), 367px"
+                width="1600"
+                height="1596"
+                loading="lazy"
+                alt="Four visuo-tactile capabilities and their underlying skills, arranged in a circular taxonomy."
+              />
+              <p class="design-panel-label"><span>(a)</span> Capability Taxonomy</p>
+            </div>
+            <div class="design-panel design-alignment">
+              <img
+                src="assets/real_sim_alignment.webp"
+                srcset="assets/real_sim_alignment-800.webp 800w, assets/real_sim_alignment.webp 2000w"
+                sizes="(max-width: 767px) calc(100vw - 36px), 489px"
+                width="2000"
+                height="1013"
+                loading="lazy"
+                alt="Corresponding real-world and simulated objects and manipulation setups, aligned at the asset and task levels."
+              />
+              <p class="design-panel-label"><span>(b)</span> Real–Sim Alignment</p>
+            </div>
+            <div class="design-panel design-diversity">
+              <img
+                src="assets/scene_diversity.webp"
+                srcset="assets/scene_diversity-800.webp 800w, assets/scene_diversity.webp 2000w"
+                sizes="(max-width: 767px) calc(100vw - 36px), 489px"
+                width="2000"
+                height="402"
+                loading="lazy"
+                alt="A shared USB-insertion task with increasingly diverse simulated backgrounds and workspace appearances."
+              />
+              <p class="design-panel-label"><span>(c)</span> Scene Diversity</p>
+            </div>
+          </div>
+        </figure>
+        <dl class="benchmark-facts">
+          <div>
+            <dt>Simulation tasks</dt>
+            <dd>11</dd>
+          </div>
+          <div>
+            <dt>Paired real-world tasks</dt>
+            <dd>8</dd>
+          </div>
+          <div>
+            <dt>Tactile capabilities</dt>
+            <dd>4</dd>
+          </div>
+          <div>
+            <dt>Tactile sensor types</dt>
+            <dd>3</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section
+        class="section"
+        id="benchmark"
+        aria-labelledby="benchmark-title"
+      >
+        <div class="wrap">
+          <div class="section-heading">
+            <h2 id="benchmark-title">Manipulation tasks across four tactile capabilities</h2>
+          </div>
+          <div
+            class="filter-list"
+            id="task-filters"
+            role="group"
+            aria-label="Filter tasks by capability"
+          ></div>
+          <div class="task-browser">
+            <div
+              class="task-list"
+              id="task-list"
+              role="group"
+              aria-label="Benchmark tasks"
+            ></div>
+            <article
+              class="task-detail"
+              id="task-detail"
+              aria-live="polite"
+              aria-atomic="true"
+            ></article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section"
+        id="openvtla"
+        aria-labelledby="openvtla-title"
+      >
+        <div class="wrap">
+          <div class="section-heading">
+            <h2 id="openvtla-title">OpenVTLA: adapting pretrained VLAs to touch</h2>
+          </div>
+          <div class="architecture-content">
+            <figure class="architecture-figure">
+              <div class="figure-frame figure-white"><img
+                  src="assets/tactile_design.webp"
+                  srcset="
+                    assets/tactile_design-800.webp  800w,
+                    assets/tactile_design.webp     2200w
+                  "
+                  sizes="(max-width: 767px) calc(100vw - 36px), 880px"
+                  width="2200"
+                  height="963"
+                  loading="lazy"
+                  alt="Design space comparing four tactile representations and five integration strategies for adapting pretrained vision-language-action models."
+              /></div>
+            </figure>
+            <p class="architecture-copy">
+              We study how to adapt pretrained VLAs to touch by comparing tactile
+              representations and integration strategies on the same
+              π<sub>0.5</sub> backbone. Based on this study, <strong>OpenVTLA</strong>
+              uses AnyTouch2 to encode tactile history into compact tokens and
+              combines them with visual tokens at the VLM input. This lets the
+              policy use tactile feedback while preserving its original
+              vision-language and action-generation pathway.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section wrap"
+        id="results"
+        aria-labelledby="results-title"
+      >
+        <div class="section-heading">
+          <h2 id="results-title">Policy performance in simulation and the real world</h2>
+        </div>
+        <div class="results-toolbar">
+          <div class="segmented" role="group" aria-label="Evaluation domain">
+            <button type="button" data-domain="sim" aria-pressed="true">
+              Simulation</button
+            ><button type="button" data-domain="real" aria-pressed="false">
+              Real world
+            </button>
+          </div>
+          <button
+            type="button"
+            class="text-button"
+            id="expand-results"
+            aria-expanded="false"
+          >
+            Show all policies
+          </button>
+        </div>
+        <div
+          class="table-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="Policy success rates, horizontally scrollable"
+        >
+          <table id="results-table"></table>
+        </div>
+      </section>
+
+      <!-- Demo section temporarily disabled; restore together with app.js rendering.
+      <section class="section" id="demos" aria-labelledby="demos-title">
+        <div class="wrap">
+          <div class="section-heading">
+            <h2 id="demos-title">Robot demonstrations across benchmark tasks</h2>
+            <p>
+              Task demonstrations and real-world policy rollouts. Videos are
+              coming soon.
+            </p>
+          </div>
+          <div class="demo-grid" id="demo-grid"></div>
+        </div>
+      </section>
+      -->
+
+      <section
+        class="section wrap citation-section"
+        id="citation"
+        aria-labelledby="citation-title"
+      >
+        <div>
+          <h2 id="citation-title">Citation</h2>
+        </div>
+        <div class="citation-box">
+          <div class="citation-toolbar">
+            <span>BibTeX</span>
+            <button type="button" id="copy-citation">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="8" y="8" width="12" height="12" rx="2" />
+                <path d="M16 8V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h4" />
+              </svg>
+              <span class="copy-label">Copy</span>
+            </button>
+          </div>
+          <pre class="citation-code"><code id="bibtex"><span class="bibtex-line"><span class="bibtex-type">@misc</span>{<span class="bibtex-key">wu2026openvitac</span>,</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">title</span>  = {OpenViTac: Learning and Benchmarking Visuo-Tactile Policies in a Unified Sim-and-Real Framework},</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">author</span> = {Wu, Yifan and Li, Qin and Min, Nan and Zhong, Guojin and Zhao, Haoyu and Li, Zhiyuan and Xu, Houze and Xu, Shengqi and Lin, Xingyao and Diao, Zijie and Liu, Zhaoxiang and Lian, Shiguo and Lu, Shunlin and Zhao, Shihao and Ye, Ziyi and Wu, Zuxuan and Jiang, Yu-Gang},</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">year</span>   = {2026},</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">eprint</span> = {2610.10384},</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">archivePrefix</span> = {arXiv},</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">primaryClass</span> = {cs.RO},</span>
+<span class="bibtex-line bibtex-field">  <span class="bibtex-name">url</span>    = {https://arxiv.org/abs/2610.10384}</span>
+<span class="bibtex-line">}</span></code></pre>
+          <p id="copy-status" class="sr-only" role="status"></p>
+        </div>
+      </section>
+    </main>
+    <footer class="wrap footer">
+      <a href="#" class="wordmark"
+        >OpenViTac</a
+      >
+      <p>Learning to manipulate with vision and touch.</p>
+      <a href="#main">Back to top</a>
+    </footer>
+  </body>
+</html>
