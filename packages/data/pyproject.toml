@@ -1,0 +1,17 @@
+[project]
+name = "openvitac-data"
+version = "0.0.0"
+description = "OpenViTac episode record schema"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "h5py>=3.11",
+    "numpy>=2.0",
+    "typing-extensions",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "openvitac_data"

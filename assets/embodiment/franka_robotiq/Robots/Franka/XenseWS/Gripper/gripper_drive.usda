@@ -1,0 +1,92 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    metersPerUnit = 1
+    subLayers = [
+        @camera_alignment.usda@
+    ]
+)
+
+over "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+{
+    over "root_joint"
+    {
+        over "finger_joint"
+        {
+            float drive:angular:physics:damping = 0.1
+            float drive:angular:physics:maxForce = 16.5
+            float drive:angular:physics:stiffness = 10
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 45
+            float physxJoint:maxJointVelocity = 130
+        }
+
+        over "right_outer_knuckle_joint"
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:maxForce = 0
+            float drive:angular:physics:stiffness = 0
+            custom float drive:angular:physics:targetPosition = 0
+            custom float drive:angular:physics:targetVelocity = 0
+            custom token drive:angular:physics:type = "force"
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 75
+            float physxJoint:maxJointVelocity = 130
+            float physxMimicJoint:rotZ:gearing = -1
+            rel physxMimicJoint:rotZ:referenceJoint = </franka_robotiq_xensews_lift11p15_univtac_import_padonly/root_joint/finger_joint>
+        }
+
+        over "left_inner_finger_joint"
+        {
+            float drive:angular:physics:damping = 0.00001
+            float drive:angular:physics:maxForce = 0.5
+            float drive:angular:physics:stiffness = 0.0002
+            float drive:angular:physics:targetPosition = -45
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+            custom float physxJoint:maxJointVelocity = 130
+        }
+
+        over "right_inner_finger_joint"
+        {
+            float drive:angular:physics:damping = 0.00001
+            float drive:angular:physics:maxForce = 0.5
+            float drive:angular:physics:stiffness = 0.0002
+            float drive:angular:physics:targetPosition = 45
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+            custom float physxJoint:maxJointVelocity = 130
+        }
+
+        over "left_outer_finger_joint"
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:maxForce = inf
+            float drive:angular:physics:stiffness = 0.05
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 180
+        }
+
+        over "right_outer_finger_joint"
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:maxForce = inf
+            float drive:angular:physics:stiffness = 0.05
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 180
+        }
+
+        over "left_inner_knuckle_joint"
+        {
+            uniform bool physics:excludeFromArticulation = 1
+        }
+
+        over "right_inner_knuckle_joint"
+        {
+            uniform bool physics:excludeFromArticulation = 1
+        }
+    }
+}

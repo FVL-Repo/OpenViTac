@@ -1,0 +1,31 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    subLayers = [
+        @camera_centered.usda@
+    ]
+)
+
+over "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+{
+    over "root_joint"
+    {
+        over "XenseWS_left"
+        {
+            over "Camera"
+            {
+                matrix4d xformOp:transform = ( (0, 0, -1, 0), (-1, -7.498798913309288e-33, 0, 0), (3.7574518450697696e-32, 1, -8.343219104633469e-48, 0), (0.08855455179720584, 0.06715861619710922, -0.12649521141181475, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+            }
+        }
+
+        over "XenseWS_right"
+        {
+            over "Camera"
+            {
+                matrix4d xformOp:transform = ( (4.440892098500626e-16, 3.33013568423603e-48, 1, 0), (-1, -7.498798913309288e-33, 4.440892098500626e-16, 0), (-3.7574518450697696e-32, -1, 8.343219104633469e-48, 0), (0.1734718067759967, -0.06715861619710922, -0.12649521141181475, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+            }
+        }
+    }
+}
