@@ -1,0 +1,45 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    metersPerUnit = 1
+)
+
+# The ported XenseWS asset deactivates the 2F-85 fingertip meshes
+# (robot_overlay.usda: Defeatured_2F_85_PAD_OPEN_fingertipsstep_01 active = false)
+# and its remaining finger collision meshes are the tactile adapters, which sit
+# ~85 mm off the tool axis.  Without a collision proxy at the pad faces the jaws
+# close straight through an object (measured: 79 mm -> 0.27 mm separation and zero
+# contact force on a standing USB).  These two invisible cubes restore a jaw that
+# closes to a ~12 mm minimum gap at the finger origins, which is where the linkage
+# folds together.
+over "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+{
+    over "root_joint"
+    {
+        over "left_inner_finger"
+        {
+            def Cube "pad_proxy" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                double size = 0.012
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+                token visibility = "invisible"
+            }
+        }
+
+        over "right_inner_finger"
+        {
+            def Cube "pad_proxy" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                double size = 0.012
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+                token visibility = "invisible"
+            }
+        }
+    }
+}

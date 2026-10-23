@@ -1,0 +1,44 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    metersPerUnit = 1
+    subLayers = [
+        @gel_overlay.usda@
+    ]
+)
+
+over "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+{
+    over "root_joint"
+    {
+        over "XenseWS_left"
+        {
+            over "Camera"
+            {
+                float2 clippingRange = (0.016, 0.04)
+                float focalLength = 20
+                float focusDistance = 0.025
+                float horizontalAperture = 23.5
+                float verticalAperture = 14
+                token projection = "perspective"
+                matrix4d xformOp:transform = ( (1, 7.498798913309288e-33, -2.2204460492503131e-16, 0), (-2.2204460492503131e-16, -1.665067842118015e-48, -1, 0), (3.7574518450697696e-32, 1, -8.3432191046334693e-48, 0), (0.084087515122890477, 0.067158675801754025, -0.1263261448589077, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+            }
+        }
+
+        over "XenseWS_right"
+        {
+            over "Camera"
+            {
+                float2 clippingRange = (0.016, 0.04)
+                float focalLength = 20
+                float focusDistance = 0.025
+                float horizontalAperture = 23.5
+                float verticalAperture = 14
+                token projection = "perspective"
+                matrix4d xformOp:transform = ( (1, 7.498798913309288e-33, -2.2204460492503131e-16, 0), (2.2204460492503131e-16, 1.665067842118015e-48, 1, 0), (-3.7574518450697696e-32, -1, 8.3432191046334693e-48, 0), (0.16900476986885071, -0.067158616197109222, -0.12632614485890775, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+            }
+        }
+    }
+}
