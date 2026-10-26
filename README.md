@@ -11,9 +11,9 @@
   <a href="#quick-start"><img src="https://img.shields.io/badge/Get-Started-2458b3?style=for-the-badge" alt="Get started"></a>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/Paper-Coming_soon-64748b?style=flat-square" alt="Paper: coming soon">
-  <img src="https://img.shields.io/badge/Hugging_Face-Coming_soon-64748b?style=flat-square&logo=huggingface" alt="Hugging Face: coming soon">
-  <img src="https://img.shields.io/badge/ModelScope-Coming_soon-64748b?style=flat-square" alt="ModelScope: coming soon">
+  <a href="https://arxiv.org/pdf/2610.10384v1"><img src="https://img.shields.io/badge/Paper-PDF-2458b3?style=flat-square" alt="Paper PDF"></a>
+  <a href="https://huggingface.co/datasets/FVL-Lab/OpenViTac"><img src="https://img.shields.io/badge/Hugging_Face-Dataset-2458b3?style=flat-square&logo=huggingface" alt="Hugging Face dataset"></a>
+  <a href="https://www.modelscope.cn/datasets/FVLRepo/OpenViTac"><img src="https://img.shields.io/badge/ModelScope-Dataset-2458b3?style=flat-square" alt="ModelScope dataset"></a>
 </p>
 
 <p align="center">
