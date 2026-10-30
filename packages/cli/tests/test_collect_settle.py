@@ -36,8 +36,9 @@ class _FakeScene:
         self.settle_args = (steps, kwargs)
         return self._result or SettleResult(requested_steps=steps, executed_steps=steps)
 
-    def start_tactile(self) -> None:
+    def start_tactile(self, *, contact_object: str | None = None) -> None:
         self.events.append("start_tactile")
+        self.contact_object = contact_object
 
     def set_expert_params(self, params: dict[str, float | str]) -> None:
         self.events.append("expert_params")
@@ -57,6 +58,7 @@ def _randomization() -> EpisodeRandomization:
         seed=3,
         instruction="test",
         actor_poses={"/World/actors/block": pose},
+        contact_object="/World/actors/block",
         metadata={"label": "rough"},
     )
 
@@ -87,6 +89,7 @@ class CollectSettleTests(unittest.TestCase):
         )
         self.assertEqual(scene.reset_poses, _randomization().actor_poses)
         self.assertEqual(scene.params, {"label": "rough"})
+        self.assertEqual(scene.contact_object, "/World/actors/block")
         self.assertEqual(meta["settle.mode"], "fixed")
         self.assertEqual(meta["settle.steps"], 7.0)
         self.assertEqual(meta["settle.steps_requested"], 7.0)

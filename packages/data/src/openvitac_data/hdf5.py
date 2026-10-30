@@ -223,6 +223,20 @@ def _pose_to_T(pose_xyzw: npt.NDArray[np.floating[Any]]) -> npt.NDArray[np.float
     return T
 
 
+def _camera_pose_rows(
+    value: npt.NDArray[Any] | None, name: str, count: int
+) -> npt.NDArray[np.float64] | None:
+    """Normalize an optional ``(4,4)``/``(T,4,4)`` per-frame camera pose."""
+    if value is None:
+        return None
+    array = np.asarray(value, dtype=np.float64)
+    if array.shape == (4, 4):
+        array = array[None]
+    if array.shape != (count, 4, 4):
+        raise ValueError(f"{name} must be (4,4) or (T,4,4), got {array.shape}")
+    return array
+
+
 def _transform_rows(
     value: npt.NDArray[np.floating[Any]] | None,
     poses: npt.NDArray[np.float32],
@@ -493,6 +507,15 @@ class Hdf5EpisodeWriter(StreamWriter[Frame]):
             "surface_triangles", data=triangles, maxshape=triangles.shape
         )
         group.create_dataset("pad_frame", data=frame, maxshape=(4, 4))
+        if pad.camera_from_pad is not None:
+            camera_from_pad = np.asarray(pad.camera_from_pad, dtype=np.float64)
+            if camera_from_pad.shape != (4, 4):
+                raise ValueError(
+                    f"tactile {pad.side!r} camera_from_pad must be (4,4)"
+                )
+            group.create_dataset(
+                "camera_from_pad", data=camera_from_pad, maxshape=(4, 4)
+            )
 
     @staticmethod
     def _write_object_meta(parent: h5py.Group, obj: ObjectMeta) -> None:
@@ -504,6 +527,7 @@ class Hdf5EpisodeWriter(StreamWriter[Frame]):
             group.attrs["mass_kg"] = obj.mass_kg
         if obj.usd is not None:
             group.attrs["usd"] = obj.usd
+        group.attrs["imaging"] = bool(obj.imaging)
         if obj.mesh_checksum is not None:
             group.attrs["mesh_checksum"] = obj.mesh_checksum
         if obj.inertia is not None:
@@ -831,6 +855,11 @@ class Hdf5EpisodeWriter(StreamWriter[Frame]):
                     tactile.valid, f"tactile[{pad.side!r}].valid", count
                 ),
             }
+            camera_pose = _camera_pose_rows(
+                tactile.camera_pose, f"tactile[{pad.side!r}].camera_pose", count
+            )
+            if camera_pose is not None:
+                rows[pad.side]["camera_pose"] = camera_pose
             declared = set(pad.image_streams)
             for stream in _TACTILE_IMAGE_STREAMS:
                 value = getattr(tactile, stream)
@@ -945,6 +974,14 @@ class Hdf5EpisodeWriter(StreamWriter[Frame]):
                         maxshape=(None, *value.shape[1:]),
                         chunks=(1024, *value.shape[1:]),
                     )
+                if "camera_pose" in rows:
+                    camera_pose = cast(npt.NDArray[np.float64], rows["camera_pose"])
+                    group.create_dataset(
+                        "camera_pose",
+                        data=camera_pose,
+                        maxshape=(None, 4, 4),
+                        chunks=(1, 4, 4),
+                    )
                 if "depth" in rows:
                     depth = cast(npt.NDArray[np.float32], rows["depth"])
                     group.create_dataset(
@@ -991,6 +1028,8 @@ class Hdf5EpisodeWriter(StreamWriter[Frame]):
                     "timestamp_us",
                     "valid",
                 ]
+                if "camera_pose" in rows:
+                    keys.append("camera_pose")
                 if "depth" in rows:
                     keys.append("depth")
                 if "rgb" in rows:
@@ -1153,6 +1192,7 @@ class Hdf5EpisodeReader(StreamReader[Frame]):
                     "stale",
                     "timestamp_us",
                     "valid",
+                    "camera_pose",
                     "depth",
                     "rgb",
                     "marker_rgb",
@@ -1293,6 +1333,14 @@ class Hdf5EpisodeReader(StreamReader[Frame]):
                     npt.NDArray[np.float64],
                     np.asarray(group["pad_frame"]),
                 )
+                camera_from_pad = (
+                    cast(
+                        npt.NDArray[np.float64],
+                        np.asarray(group["camera_from_pad"]),
+                    )
+                    if "camera_from_pad" in _keys(group)
+                    else None
+                )
                 tactile.append(
                     PadTactileMeta(
                         side=side,
@@ -1338,6 +1386,7 @@ class Hdf5EpisodeReader(StreamReader[Frame]):
                             if "contact_object" in _keys(pad_attrs)
                             else None
                         ),
+                        camera_from_pad=camera_from_pad,
                         image_streams=self._read_image_streams(side, pad_attrs),
                         depth_camera=(
                             DepthCameraMeta(
@@ -1449,6 +1498,11 @@ class Hdf5EpisodeReader(StreamReader[Frame]):
                             if "mesh_checksum" in _keys(obj_attrs)
                             else None
                         ),
+                        imaging=(
+                            bool(np.asarray(obj_attrs["imaging"]))
+                            if "imaging" in _keys(obj_attrs)
+                            else False
+                        ),
                     )
                 )
         return replace(
@@ -1543,6 +1597,14 @@ class Hdf5EpisodeReader(StreamReader[Frame]):
     def _read_tactile_frame(self, side: str, index: int) -> TactileFrame:
         datasets = self._tactile_datasets[side]
         return TactileFrame(
+            camera_pose=(
+                None
+                if datasets.get("camera_pose") is None
+                else cast(
+                    npt.NDArray[np.float64],
+                    np.asarray(datasets["camera_pose"][index]),
+                )
+            ),
             side=side,
             vertices=cast(
                 npt.NDArray[np.float32],

@@ -23,22 +23,52 @@ from openvitac_spec import (
 
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
-from ..motion import Hold, Move, advance_move, begin_move
+from ..motion import (
+    HAND_TO_GEL_FACE,
+    Hold,
+    Move,
+    advance_move,
+    align_pad_to_face,
+    begin_move,
+    pad_close_q,
+    quat_rotate,
+)
 
 _HEAD_CAM_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)  # 2.x camera offset was WXYZ
 
-_LEFT_BLOCK_POS = (0.40, 0.12, 0.002)
-_RIGHT_BLOCK_POS = (0.40, -0.12, 0.002)
+# The table top is at 2.5 mm; spawn 1.5 mm above it (UIPC rejects an initial
+# overlap with the fixed support body, and PhysX settles the block).
+_LEFT_BLOCK_POS = (0.40, 0.12, 0.004)
+_RIGHT_BLOCK_POS = (0.40, -0.12, 0.004)
 # Park the wrongly grasped block away from the rough block and gripper sweep.
 _PARK_BY_SIDE = {
-    "left": (0.30, 0.30, 0.002),
-    "right": (0.30, -0.30, 0.002),
+    "left": (0.30, 0.30, 0.004),
+    "right": (0.30, -0.30, 0.004),
 }
 _SIDES = ("left", "right")
 _ROUGH_PLATE = "yellow_plate"
-_HAND_TO_GRASP = 0.131
 _GRASP_HEIGHT = 0.035
+# UIPC fixed supports mirror the table and the yellow plate the rough block is
+# released onto (box centres/half extents are actor-local metres; the tops sit
+# on the authored world z = 2.5 mm table and 8 mm plate, like
+# roughness_classify).  The table box is wider than that task's 0.3 m half
+# extent because this task parks a block at y = +/-0.30, its edge.
+_TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.35, 0.35, 0.0012))
+_PLATE_SUPPORT_BOX = ((0.0, 0.0, 0.0033), (0.04, 0.04, 0.0027))
+# Both blocks are UIPC bodies, so the close comes from the grasped block's own
+# width through the shared close law (motion.pad_close_q); widths are the asset
+# x,y bounds (smooth +/-0.0075 m, rough +/-0.00794 m).
+_BLOCK_WIDTH_BY_NAME = {"smooth_block": 0.01500, "rough_block": 0.01588}
+_CLOSE_Q_BY_BLOCK = {
+    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_NAME.items()
+}
 _APPROACH_CLEARANCE = 0.05
+# The grasp approach and the park retract travel horizontally over a standing
+# 80 mm block (the target or the just-parked one).  The pad face is 25.3 mm
+# tall, so an approach at _APPROACH_CLEARANCE keeps the pad's lower edge
+# 7.6 mm inside the block and sweeps it over; PhysX had no pad-block collision
+# there.  Approach high enough that the whole pad clears the block top.
+_TRANSIT_CLEARANCE = 0.09
 _LIFT_HEIGHT = 0.05
 _TARGET_BLOCK_Z = 0.01
 _SUCCESS_XY_TOLERANCE = 0.04
@@ -78,6 +108,9 @@ def _randomize(task: Task, seed: int) -> EpisodeRandomization:
         seed=seed,
         instruction="Find the rough block by touch and place it on the yellow plate.",
         actor_poses=poses,
+        # The exploratory grasp of the other block has no contact metrics; only
+        # the target (success object) needs them.
+        contact_object="/World/actors/rough_block",
         metadata={
             "rough_block_side": rough_side,
             "smooth_block_side": smooth_side,
@@ -150,34 +183,35 @@ def _enter(
             goal = (
                 bx,
                 by,
-                grasp_z + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                grasp_z + HAND_TO_GEL_FACE + _TRANSIT_CLEARANCE,
             )
             ticks = 100
         case _RegraspPhase.GRASP_DESCEND:
             (bx, by, bz), _ = world.object_pose(state.grasp_block)
             grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + _HAND_TO_GRASP)
+            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE)
             ticks = _MOVE_TICKS
         case _RegraspPhase.GRASP_CLOSE:
-            qpos = world.arm.gripper.close_qpos
+            # Gel face a GRASP_OVERTRAVEL into the grasped block per side.
+            qpos = _CLOSE_Q_BY_BLOCK[state.grasp_block]
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
         case _RegraspPhase.GRASP_LIFT:
             (bx, by, bz), _ = world.object_pose(state.grasp_block)
             grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + _HAND_TO_GRASP + _LIFT_HEIGHT)
+            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE + _LIFT_HEIGHT)
             ticks = 90
         case _RegraspPhase.PARK_APPROACH:
             px, py, pz = state.park
             goal = (
                 px,
                 py,
-                pz + _GRASP_HEIGHT + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                pz + _GRASP_HEIGHT + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
             )
             ticks = 70
         case _RegraspPhase.PARK_DESCEND:
             px, py, pz = state.park
-            goal = (px, py, pz + _GRASP_HEIGHT + _HAND_TO_GRASP)
+            goal = (px, py, pz + _GRASP_HEIGHT + HAND_TO_GEL_FACE)
             ticks = _MOVE_TICKS
         case _RegraspPhase.PARK_OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -188,7 +222,7 @@ def _enter(
             goal = (
                 px,
                 py,
-                pz + _GRASP_HEIGHT + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                pz + _GRASP_HEIGHT + HAND_TO_GEL_FACE + _TRANSIT_CLEARANCE,
             )
             ticks = _MOVE_TICKS
         case _RegraspPhase.PLACE_APPROACH:
@@ -197,13 +231,13 @@ def _enter(
             goal = (
                 tx,
                 ty,
-                place_z + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
             )
             ticks = 100
         case _RegraspPhase.PLACE_DESCEND:
             (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
             place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (tx, ty, place_z + _HAND_TO_GRASP)
+            goal = (tx, ty, place_z + HAND_TO_GEL_FACE)
             ticks = 90
         case _RegraspPhase.PLACE_OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -215,7 +249,7 @@ def _enter(
             goal = (
                 tx,
                 ty,
-                place_z + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
             )
             ticks = 90
         case _RegraspPhase.INIT | _RegraspPhase.DONE:
@@ -282,6 +316,11 @@ class _RegraspExpert:
             first_block = (
                 "rough_block" if initial_side == rough_side else "smooth_block"
             )
+            # Parallel the pad plane to the grasped block's +/-y face; see
+            # roughness_classify for the lever-arm rationale.  Both blocks stay
+            # axis-aligned (upright on the table), so the second grasp reuses it.
+            _, bquat = world.object_pose(first_block)
+            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
             state = replace(
                 state,
                 grasp_block=first_block,
@@ -345,7 +384,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
             tz
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE
         )
         retracted = (
@@ -382,26 +421,46 @@ RoughnessRegrasp = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            uipc_fixed_boxes=(_TABLE_SUPPORT_BOX,),
+            authority="physx",
+        ),
+        # Both plates are static so the UIPC world owns them as fixed bodies
+        # (a dynamic actor cannot declare a fixed UIPC collision copy); identical
+        # plates must also share one rest height.
         Actor(
             "roughness_task/blue_square_plate.usd",
             "/World/actors/blue_plate",
             pos=(0.48, 0.08, 0.002),
+            dynamic=False,
+            uipc_fixed_boxes=(_PLATE_SUPPORT_BOX,),
+            authority="physx",
         ),
         Actor(
             "roughness_task/yellow_square_plate.usd",
             "/World/actors/yellow_plate",
             pos=(0.48, -0.08, 0.002),
+            dynamic=False,
+            uipc_fixed_boxes=(_PLATE_SUPPORT_BOX,),
+            authority="physx",
         ),
         Actor(
             "roughness_task/black_smooth_cuboid.usd",
             "/World/actors/smooth_block",
             pos=_LEFT_BLOCK_POS,
+            authority="uipc",
+            tactile_mesh="roughness_task/black_smooth_cuboid_tet.npz",
         ),
         Actor(
             "roughness_task/black_rough_cuboid.usd",
             "/World/actors/rough_block",
             pos=_RIGHT_BLOCK_POS,
+            authority="uipc",
+            tactile_mesh="roughness_task/black_rough_cuboid_tet.npz",
         ),
     ),
     instruction="Find the rough block by touch and place it on the yellow plate.",

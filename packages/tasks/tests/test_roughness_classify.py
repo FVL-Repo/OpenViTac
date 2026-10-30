@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import logging
 import unittest
+from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
+from openvitac_tasks.motion import HAND_TO_GEL_FACE, PAD_NORMAL_IN_HAND
 from openvitac_tasks.tasks.roughness_classify import (
     _APPROACH_CLEARANCE,
+    _CLOSE_Q,
     _GRASP_HEIGHT,
-    _HAND_TO_GRASP,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     RoughnessClassify,
@@ -23,8 +27,8 @@ _PLATES = {
 }
 _BLOCKS = {"smooth": "smooth_block", "rough": "rough_block"}
 _TARGETS = {"smooth": "blue_plate", "rough": "yellow_plate"}
-_START = (0.38, 0.0, 0.002)
-_STANDBY = (0.30, 0.25, 0.002)
+_START = (0.38, 0.0, 0.004)
+_STANDBY = (0.30, 0.25, 0.004)
 
 
 class _Gripper:
@@ -41,7 +45,8 @@ class _Gripper:
 
     def set_target(self, qpos: float) -> None:
         world = self._world
-        if qpos == self.close_qpos and self._qpos != self.close_qpos:
+        # The task commands its width-derived _CLOSE_Q, not the hardware limit.
+        if qpos == _CLOSE_Q and self._qpos != _CLOSE_Q:
             world.events.append(("close", 1))
             world.holding = True
         elif qpos == self.open_qpos and self._qpos != self.open_qpos:
@@ -86,7 +91,7 @@ class _Arm:
             world.blocks[world.label] = (
                 pos[0],
                 pos[1],
-                pos[2] - 0.131 - 0.035,
+                pos[2] - HAND_TO_GEL_FACE - _GRASP_HEIGHT,
             )
 
 
@@ -163,6 +168,34 @@ def _run_until_success(world: _World) -> tuple[str, float]:
 
 
 class RoughnessClassifyTests(unittest.TestCase):
+    def test_pad_normal_matches_authored_mount(self) -> None:
+        from pxr import Usd, UsdGeom
+
+        asset = (
+            Path(__file__).resolve().parents[3]
+            / "assets/embodiment/franka_gsmini.usda"
+        )
+        stage = Usd.Stage.Open(str(asset))
+        cache = UsdGeom.XformCache()
+        hand = np.array(
+            cache.GetLocalToWorldTransform(
+                stage.GetPrimAtPath("/panda/panda_hand")
+            )
+        ).T
+        gelpad = np.array(
+            cache.GetLocalToWorldTransform(
+                stage.GetPrimAtPath("/panda/gelpad_left")
+            )
+        ).T
+        normal = (np.linalg.inv(hand) @ gelpad)[:3, 2]
+        for got, want in zip(normal, PAD_NORMAL_IN_HAND, strict=True):
+            self.assertAlmostEqual(float(got), want, places=4)
+
+    def test_close_position_matches_the_recorded_command(self) -> None:
+        # The fixed UIPC episode commanded 3.376 mm for the 15.88 mm block
+        # (1 mm gel overtravel; measured pad-face gap 7.1276 mm at q=0).
+        self.assertAlmostEqual(_CLOSE_Q, 0.0033762, places=7)
+
     def test_randomizer_samples_both_labels_and_table_standby(self) -> None:
         seen: set[str] = set()
         for seed in range(4):
@@ -202,7 +235,7 @@ class RoughnessClassifyTests(unittest.TestCase):
                 target[2]
                 + _TARGET_BLOCK_Z
                 + _GRASP_HEIGHT
-                + _HAND_TO_GRASP
+                + HAND_TO_GEL_FACE
                 + _APPROACH_CLEARANCE,
             )
             self.assertTrue(next(RoughnessClassify.success(world)))
@@ -222,7 +255,7 @@ class RoughnessClassifyTests(unittest.TestCase):
             target[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE
         )
         self.assertGreaterEqual(world.ee[2], retract_z - _SUCCESS_Z_TOLERANCE)

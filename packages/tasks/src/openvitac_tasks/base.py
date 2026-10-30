@@ -54,6 +54,7 @@ class EpisodeRandomization:
         default_factory=dict[str, ActorPose]
     )
     expert_params: Mapping[str, float] = field(default_factory=dict[str, float])
+    contact_object: str | None = None
     metadata: Mapping[str, float | str] = field(
         default_factory=dict[str, float | str]
     )
@@ -86,10 +87,6 @@ class EpisodeRandomization:
     def expert_context(self) -> dict[str, float | str]:
         """Merge metadata and expert-only params for ``ExpertWorld`` lookup."""
         return {**self.metadata, **self.expert_params}
-
-
-# One-release compatibility name for callers that imported the old type.
-Randomization = EpisodeRandomization
 
 
 @dataclass(frozen=True)

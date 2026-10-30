@@ -6,7 +6,6 @@ with the paper abbreviations; class-B tasks (ECS/GC) remain out of scope.
 
 from .base import (
     EpisodeRandomization,
-    Randomization,
     Task,
 )
 from .expert import (
@@ -45,7 +44,6 @@ __all__ = [
     "InsertUsb",
     "PullDrawer",
     "Quat",
-    "Randomization",
     "RoughnessClassify",
     "RoughnessRegrasp",
     "SuccessFn",

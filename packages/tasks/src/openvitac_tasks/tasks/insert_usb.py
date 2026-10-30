@@ -505,13 +505,20 @@ InsertUsb = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            authority="physx",
+        ),
         Actor(
             "insert_usb/slot_start.usd",
             "/World/actors/start_slot",
             pos=(0.4, 0.0, 0.002),
             dynamic=False,
             uipc_fixed_boxes=_START_SUPPORT_BOXES,
+            authority="physx",
         ),
         Actor(
             "insert_usb/slot_target.usd",
@@ -519,6 +526,7 @@ InsertUsb = Task(
             pos=(0.52, 0.0, 0.002),
             dynamic=False,
             uipc_fixed_mesh="insert_usb/slot_target_tet.npz",
+            authority="physx",
         ),
         # Keep the plug tip >1 mm above the fixed support floor: UIPC's init
         # sanity check rejects any initial overlap.  The expert reads the live

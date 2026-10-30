@@ -1,18 +1,17 @@
 """PD (paper abbreviation): grasp the upper drawer handle and pull the drawer open.
 
-The cabinet and both drawers are separate rigid props; the cabinet is rotated 90 deg
-about z so its front faces the robot. Each drawer rides a prismatic joint on the
-cabinet, offset 10 mm along the cabinet's local +y and lifted to its shelf.
-
-The cabinet is spawned dynamic with density 1e5 so each prismatic joint has a real
-body0. PhysX does not simulate a world-anchored prismatic joint on a bare rigid
-object: with a static (collision-only) cabinet the authored joint freezes the
-drawer, so a 100 N pull moves it <0.4 mm. The high density keeps the cabinet
-effectively fixed against the drawer's reaction.
+No joints: the cabinet and both drawers are ordinary rigid props in the UIPC
+world.  The cabinet is rotated 90 deg about z so its front faces the robot, and
+is a fixed body whose collision copy reproduces the cavity (two sides, back,
+bottom, top and the two shelves), not the hull: the drawers must slide inside
+it and ride their shelves.  The upper drawer is a dynamic ABD body dragged out
+by its 20 mm nub against the shelf friction; the lower drawer is never grasped
+or touched, so it is fixed in place with a box collision copy.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from enum import Enum, auto
@@ -22,13 +21,22 @@ from openvitac_spec import (
     Actor,
     CameraSpec,
     PinholeIntrinsics,
-    PrismaticJoint,
     gsmini_pair,
 )
 
 from ..base import Task
 from ..expert import Action, ExpertWorld
-from ..motion import Hold, Move, advance_move, begin_move
+from ..motion import (
+    Hold,
+    Move,
+    advance_move,
+    begin_move,
+    hand_for_pad_midpoint,
+    pad_close_q,
+    quat_conjugate,
+    quat_mul,
+    quat_rotate,
+)
 
 Vec3 = tuple[float, float, float]
 Quat = tuple[float, float, float, float]
@@ -36,24 +44,6 @@ Quat = tuple[float, float, float, float]
 
 def _add(a: Vec3, b: Vec3) -> Vec3:
     return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
-
-
-def _rotate(quat: Quat, vec: Vec3) -> Vec3:
-    """Rotate ``vec`` by the XYZW quaternion ``quat``."""
-    x, y, z, w = quat
-    tx = 2.0 * (y * vec[2] - z * vec[1])
-    ty = 2.0 * (z * vec[0] - x * vec[2])
-    tz = 2.0 * (x * vec[1] - y * vec[0])
-    return (
-        vec[0] + w * tx + (y * tz - z * ty),
-        vec[1] + w * ty + (z * tx - x * tz),
-        vec[2] + w * tz + (x * ty - y * tx),
-    )
-
-
-def _conjugate(quat: Quat) -> Quat:
-    x, y, z, w = quat
-    return (-x, -y, -z, w)
 
 
 _HEAD_CAM_QUAT_XYZW = (-0.061628, 0.704416, 0.704416, -0.061628)
@@ -65,30 +55,21 @@ _DRAWER_Y_OFFSET = 0.010
 _LOWER_DRAWER_OFFSET_Z = 0.0085 + 0.0010  # shelf height + assembly clearance
 _UPPER_DRAWER_OFFSET_Z = 0.0700 + 0.0010
 
-# Joint anchors are the drawer centres in the cabinet frame; joint value 0 is the
-# spawned (closed) pose.
-_LOWER_DRAWER_JOINT_POS = (0.0, _DRAWER_Y_OFFSET, _LOWER_DRAWER_OFFSET_Z)
-_UPPER_DRAWER_JOINT_POS = (0.0, _DRAWER_Y_OFFSET, _UPPER_DRAWER_OFFSET_Z)
+# Closed drawer poses in the cabinet frame: the drawer origin (its bottom centre)
+# sits 10 mm behind the cabinet front, 1 mm above its shelf.
+_LOWER_DRAWER_CLOSED_POS = (0.0, _DRAWER_Y_OFFSET, _LOWER_DRAWER_OFFSET_Z)
+_UPPER_DRAWER_CLOSED_POS = (0.0, _DRAWER_Y_OFFSET, _UPPER_DRAWER_OFFSET_Z)
 # Drawer poses are those anchors transformed by the cabinet's stage pose. In the
 # cabinet's 90 deg frame, local +y points along world -x.
 _LOWER_DRAWER_POS = _add(
-    _CABINET_POS, _rotate(_CABINET_ROT_XYZW, _LOWER_DRAWER_JOINT_POS)
+    _CABINET_POS, quat_rotate(_CABINET_ROT_XYZW, _LOWER_DRAWER_CLOSED_POS)
 )
 _UPPER_DRAWER_POS = _add(
-    _CABINET_POS, _rotate(_CABINET_ROT_XYZW, _UPPER_DRAWER_JOINT_POS)
+    _CABINET_POS, quat_rotate(_CABINET_ROT_XYZW, _UPPER_DRAWER_CLOSED_POS)
 )
-# Local +y is the pull-out direction; the pull stroke is 0.10 m, so 0.15 leaves
-# headroom without letting the drawer leave the rail.
-_DRAWER_PULL_LIMITS = (0.0, 0.15)
-
 # Grasp geometry for the upper drawer's front post (the handle is a 20 mm wide,
 # 20 mm tall rectangular nub at the drawer front, protruding along local +y).
 _HANDLE_POS = (0.0, 0.124, 0.025)  # m, upper drawer local frame
-# Commanded hand origin -> pad grasp midpoint along the hand's finger axis (+z),
-# measured for this GsMini hand at the settled close pose in insert_usb
-# (118.02 mm geometric, 116.67 mm in command space). The vertical grasp puts the
-# pad midpoint on the handle, so the hand sits this far above it.
-_HAND_TCP_OFFSET = 0.11667  # m
 # The gripping pad midpoint is 5 mm behind the handle's world-x centre; this
 # clears the GsMini housing from the drawer face while keeping the pads on the
 # 25 mm-deep nub.
@@ -96,8 +77,44 @@ _GRASP_BACKOFF_X = 0.005  # m
 _APPROACH_DISTANCE = 0.08  # m, pre-grasp back-off opposite the finger axis
 _PULL_SEGMENT = 0.02  # m along world -x per segmented stroke
 _PULL_STEPS = 6  # 0.12 m commanded, enough for the 0.08 m success rail stroke
-_SUCCESS_PULL_DISTANCE = 0.08  # m, joint displacement along the rail
+_SUCCESS_PULL_DISTANCE = 0.08  # m, displacement along the rail
 _SUCCESS_Z_THRESHOLD = 0.01  # m, avoid counting a lifted drawer as pulled out
+# Without a joint the drawer can be dragged out obliquely; gate the yaw and the
+# lateral drift as well. The cabinet leaves 1 mm per side (drawer x +-75 vs wall
+# inner faces at +-76, back at -106 vs -105) and the pull is 0.10 m, so a clean
+# pull drifts far less than the gates; they only reject a gross oblique drag.
+_SUCCESS_YAW_LIMIT = math.radians(10.0)
+_SUCCESS_X_DRIFT = 0.01  # m
+
+# Cabinet-local fixed collision copy: 7 boxes (two sides, back, floor, two
+# shelves, top) enclose the cavity; a solid hull would fill it and eject the
+# drawers.  The upper drawer's tet hull is solid, so its 150 x 210 mm body
+# clears the 9 mm walls by 1 mm per side and its shelf by 1 mm.  The boxes are
+# disjoint on purpose: UIPC rejects a fixed body whose own meshes intersect or
+# nearly touch, hence the 0.2 mm gaps at the junctions (far smaller than the
+# drawer clearance).
+_CABINET_CAVITY_BOXES = (
+    ((-0.0805, 0.0, 0.072), (0.0045, 0.115, 0.072)),  # left wall: x -85..-76
+    ((0.0805, 0.0, 0.072), (0.0045, 0.115, 0.072)),  # right wall: x 76..85
+    ((0.0, -0.1105, 0.072), (0.0758, 0.0045, 0.072)),  # back: y -115..-106
+    ((0.0, 0.0046, 0.00365), (0.0758, 0.1104, 0.00365)),  # floor: z 0..7.3
+    ((0.0, 0.0046, 0.008), (0.0758, 0.1104, 0.0005)),  # lower shelf: 7.5..8.5
+    ((0.0, 0.0046, 0.0695), (0.0758, 0.1104, 0.0005)),  # upper shelf: 69..70
+    ((0.0, 0.0046, 0.133), (0.0758, 0.1104, 0.011)),  # top: z 122..144 mm
+)
+# The lower drawer is never touched: its body box is enough, the nub is omitted.
+_LOWER_DRAWER_BOXES = (((0.0, 0.0, 0.025), (0.075, 0.105, 0.025)),)
+# The tet hull is 1.585e-3 m^3; 205.7 kg/m^3 reproduces the 0.326 kg that the
+# shipped hollow shell masses at PhysX's 1e3.
+_UPPER_DRAWER_DENSITY = 205.7
+
+# The front panel (2.5 mm) is below the pad gap; the expert grips the 20 mm nub.
+# 1.5 mm of overtravel per pad gives 2 mu F_n ~ 11.7 N, above the 8.6 N the
+# shelf drag demands (mu m g = 2.5 * 3.2 N); the block tasks keep the 1 mm
+# default (7.85 N).
+_GRASP_OVERTRAVEL = 0.0015
+_HANDLE_WIDTH = 0.020
+_CLOSE_Q = pad_close_q(_HANDLE_WIDTH, _GRASP_OVERTRAVEL)
 
 # Nominal arm pose: GsMini default plus joint7 = 0.741, pinned explicitly.
 _TASK_INITIAL_JOINT_POS = {
@@ -115,24 +132,17 @@ _TASK_INITIAL_JOINT_POS = {
 def _handle_world(world: ExpertWorld) -> Vec3:
     """World position of the upper drawer's grasp post (drawer-local point)."""
     pos, quat = world.object_pose("upper_drawer")
-    return _add(pos, _rotate(quat, _HANDLE_POS))
+    return _add(pos, quat_rotate(quat, _HANDLE_POS))
 
 
 def _hand_target(handle: Vec3, quat: Quat, *, clearance: float) -> Vec3:
     """Hand-origin target whose pad midpoint sits at ``handle``.
 
-    ``quat`` is the hand orientation used for the approach; its local +z axis is
-    the finger direction, so the hand origin is ``HAND_TCP_OFFSET`` back along
-    that axis (above the handle for the vertical grasp). ``clearance`` backs the
-    hand off further in the same direction for the pre-grasp.
+    ``motion.hand_for_pad_midpoint`` places the pads on the handle along the
+    finger axis; the extra back-off clears the GsMini housing from the drawer.
     """
-    finger_axis = _rotate(quat, (0.0, 0.0, 1.0))
-    back = _HAND_TCP_OFFSET + clearance
-    return (
-        handle[0] - finger_axis[0] * back - _GRASP_BACKOFF_X,
-        handle[1] - finger_axis[1] * back,
-        handle[2] - finger_axis[2] * back,
-    )
+    hx, hy, hz = hand_for_pad_midpoint(handle, quat, clearance=clearance)
+    return (hx - _GRASP_BACKOFF_X, hy, hz)
 
 
 class _PullPhase(Enum):
@@ -204,7 +214,7 @@ def _enter(
             goal = _hand_target(handle, state.quat, clearance=0.0)
             ticks = 250
         case _PullPhase.CLOSE:
-            qpos = world.arm.gripper.close_qpos
+            qpos = _CLOSE_Q
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(300))
             return state, _action(state)
         case _PullPhase.PULL:
@@ -304,18 +314,30 @@ class _PullExpert:
 
 
 def _success(world: ExpertWorld) -> Iterator[bool]:
-    """Upper drawer pulled out >8 cm along its rail with <1 cm z drift.
+    """Upper drawer pulled out >8 cm along its rail without being dragged askew.
 
-    Displacement is measured in the cabinet frame against the closed joint
-    anchor, so it is a real rail displacement rather than an arm/command proxy.
+    Displacement, yaw and drift are measured in the cabinet frame against the
+    closed drawer pose, so they describe the drawer rather than the arm. With
+    no joint an oblique drag would still move the drawer +y, hence the yaw and
+    lateral gates.
     """
     while True:
-        (dx, dy, dz), _ = world.object_pose("upper_drawer")
+        (dx, dy, dz), drawer_quat = world.object_pose("upper_drawer")
         (cx, cy, cz), cabinet_quat = world.object_pose("cabinet")
-        local = _rotate(_conjugate(cabinet_quat), (dx - cx, dy - cy, dz - cz))
-        pull = local[1] - _UPPER_DRAWER_JOINT_POS[1]
-        z_drift = abs(local[2] - _UPPER_DRAWER_JOINT_POS[2])
-        yield pull > _SUCCESS_PULL_DISTANCE and z_drift < _SUCCESS_Z_THRESHOLD
+        local = quat_rotate(quat_conjugate(cabinet_quat), (dx - cx, dy - cy, dz - cz))
+        pull = local[1] - _UPPER_DRAWER_CLOSED_POS[1]
+        z_drift = abs(local[2] - _UPPER_DRAWER_CLOSED_POS[2])
+        x_drift = abs(local[0] - _UPPER_DRAWER_CLOSED_POS[0])
+        rx, ry, rz, rw = quat_mul(quat_conjugate(cabinet_quat), drawer_quat)
+        sin_yaw = 2.0 * (rw * rz + rx * ry)
+        cos_yaw = 1.0 - 2.0 * (ry * ry + rz * rz)
+        yaw = abs(math.atan2(sin_yaw, cos_yaw))
+        yield (
+            pull > _SUCCESS_PULL_DISTANCE
+            and z_drift < _SUCCESS_Z_THRESHOLD
+            and x_drift <= _SUCCESS_X_DRIFT
+            and yaw <= _SUCCESS_YAW_LIMIT
+        )
 
 
 PullDrawer = Task(
@@ -344,48 +366,50 @@ PullDrawer = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
-        # Dynamic so each prismatic joint has a body0; 1e5 density keeps the
-        # cabinet effectively fixed against the drawer reaction.
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            authority="physx",
+        ),
+        # A fixed UIPC body; its cavity-shaped box copy (not the hull) lets the
+        # drawers slide inside and ride their shelves.
         Actor(
             "pull_drawer/cabinet_body.usd",
             "/World/actors/cabinet",
             pos=_CABINET_POS,
             rot=_CABINET_ROT_XYZW,
-            dynamic=True,
-            density=1e5,
+            dynamic=False,
+            uipc_fixed_boxes=_CABINET_CAVITY_BOXES,
+            authority="physx",
         ),
+        # Never grasped or touched: a fixed body box keeps it in place without a
+        # tet asset; only the visual usd keeps the hollow shape.
         Actor(
             "pull_drawer/lower_drawer.usd",
             "/World/actors/lower_drawer",
             pos=_LOWER_DRAWER_POS,
             rot=_CABINET_ROT_XYZW,
+            dynamic=False,
+            uipc_fixed_boxes=_LOWER_DRAWER_BOXES,
+            authority="physx",
         ),
+        # Solid-hull tet proxy. The shipped usd is a hollow shell (outer faces at
+        # x +-75, y -105/105, z 0/50 mm; wall 5.5 mm at the sides, 4.2 mm floor -
+        # the 2.46 mm figure is V/A). Closing the cavity faithfully needs
+        # epsilon <= 3e-4 and 1.2 mm edges (1.96 M tets); nothing enters the
+        # drawer in this task, so the hull - the exact outer silhouette
+        # including the 20 mm nub - is a deliberate simplification.
         Actor(
             "pull_drawer/upper_drawer.usd",
             "/World/actors/upper_drawer",
             pos=_UPPER_DRAWER_POS,
             rot=_CABINET_ROT_XYZW,
-        ),
-    ),
-    # The cabinet is dynamic, so each joint's body0 is a real rigid body; the
-    # anchor resolves through the cabinet's stage pose (cabinet-frame spec.pos).
-    joints=(
-        PrismaticJoint(
-            prim_path="/World/joints/lower_drawer",
-            parent="/World/actors/cabinet",
-            child="/World/actors/lower_drawer",
-            pos=_LOWER_DRAWER_JOINT_POS,
-            axis="Y",
-            limits=_DRAWER_PULL_LIMITS,
-        ),
-        PrismaticJoint(
-            prim_path="/World/joints/upper_drawer",
-            parent="/World/actors/cabinet",
-            child="/World/actors/upper_drawer",
-            pos=_UPPER_DRAWER_JOINT_POS,
-            axis="Y",
-            limits=_DRAWER_PULL_LIMITS,
+            authority="uipc",
+            tactile_mesh="pull_drawer/upper_drawer_tet.npz",
+            contact_object=True,
+            density=_UPPER_DRAWER_DENSITY,
         ),
     ),
     instruction="Grasp the upper drawer handle and pull the upper drawer open.",

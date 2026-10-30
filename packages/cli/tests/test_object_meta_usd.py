@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 import numpy as np
 
@@ -38,6 +39,23 @@ class TaskObjectUsdMetaTests(unittest.TestCase):
         for name, task in TASKS.items():
             with self.subTest(task=name):
                 cfg = tactile_plan_from_scene(task.scene_spec())
+                # The bridge applies the episode's contact-object choice at
+                # reset; a task with several UIPC bodies is ambiguous without it.
+                contact_object = task.setup(0).contact_object
+                if contact_object is not None:
+                    cfg = replace(
+                        cfg,
+                        objects=tuple(
+                            replace(
+                                obj,
+                                contact_object=(
+                                    obj.prim_path == contact_object
+                                    and not obj.fixed
+                                ),
+                            )
+                            for obj in cfg.objects
+                        ),
+                    )
                 frames, surfaces = _fake_frames_and_surfaces(cfg)
                 _, objects = _tactile_meta(
                     cfg,

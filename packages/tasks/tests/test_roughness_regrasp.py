@@ -8,19 +8,20 @@ from typing import Any
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
+from openvitac_tasks.motion import HAND_TO_GEL_FACE
 from openvitac_tasks.tasks.roughness_regrasp import (
     _APPROACH_CLEARANCE,
+    _CLOSE_Q_BY_BLOCK,
     _GRASP_HEIGHT,
-    _HAND_TO_GRASP,
     _ROUGH_PLATE,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     RoughnessRegrasp,
 )
 
-_LEFT = (0.40, 0.12, 0.002)
-_RIGHT = (0.40, -0.12, 0.002)
-_PARK_RIGHT = (0.30, -0.30, 0.002)
+_LEFT = (0.40, 0.12, 0.004)
+_RIGHT = (0.40, -0.12, 0.004)
+_PARK_RIGHT = (0.30, -0.30, 0.004)
 _YELLOW = (0.48, -0.08, 0.002)
 _BLUE = (0.48, 0.08, 0.002)
 
@@ -39,12 +40,14 @@ class _Gripper:
 
     def set_target(self, qpos: float) -> None:
         world = self._world
-        if qpos == self.close_qpos and self._qpos != self.close_qpos:
-            world.events.append(("close", 1))
+        # The task commands the width-derived close q, not the hardware limit.
+        if qpos == self.open_qpos:
+            if self._qpos != self.open_qpos:
+                world.events.append(("open", 1))
+                world.holding = None
+        elif qpos != self._qpos:
+            world.events.append(("close", qpos))
             world.holding = world.nearest_block()
-        elif qpos == self.open_qpos and self._qpos != self.open_qpos:
-            world.events.append(("open", 1))
-            world.holding = None
         self._qpos = qpos
 
     def joint_pos(self) -> float:
@@ -84,7 +87,7 @@ class _Arm:
             world.blocks[world.holding] = (
                 pos[0],
                 pos[1],
-                pos[2] - 0.131 - 0.035,
+                pos[2] - HAND_TO_GEL_FACE - _GRASP_HEIGHT,
             )
 
 
@@ -200,12 +203,26 @@ class RoughnessRegraspTests(unittest.TestCase):
             _YELLOW[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE,
         )
         self.assertTrue(next(RoughnessRegrasp.success(world)))
         world.blocks["rough"] = (_YELLOW[0] + 0.05, _YELLOW[1], _YELLOW[2] + 0.01)
         self.assertFalse(next(RoughnessRegrasp.success(world)))
+
+    def test_close_position_per_block(self) -> None:
+        # 15.00 mm -> 2.936 mm, 15.88 mm -> 3.376 mm (1 mm gel overtravel;
+        # measured pad-face gap 7.1276 mm at q=0); the wider block closes more.
+        self.assertAlmostEqual(
+            _CLOSE_Q_BY_BLOCK["smooth_block"], 0.0029362, places=7
+        )
+        self.assertAlmostEqual(
+            _CLOSE_Q_BY_BLOCK["rough_block"], 0.0033762, places=7
+        )
+        self.assertLess(
+            _CLOSE_Q_BY_BLOCK["smooth_block"],
+            _CLOSE_Q_BY_BLOCK["rough_block"],
+        )
 
     def test_first_true_is_after_open_and_retract(self) -> None:
         _, world = _world(0)
@@ -219,7 +236,7 @@ class RoughnessRegraspTests(unittest.TestCase):
             plate[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE
         )
         self.assertGreaterEqual(world.ee[2], retract_z - _SUCCESS_Z_TOLERANCE)

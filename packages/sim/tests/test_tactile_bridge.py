@@ -123,8 +123,8 @@ class SensorMappingTests(unittest.TestCase):
     def test_actor_mapping(self) -> None:
         objs = objects_from_actors(
             (
-                Actor("usb.usd", "/World/actors/usb", dynamic=True),
-                Actor("plate.usda", "/World/plate", dynamic=False),
+                Actor("usb.usd", "/World/actors/usb", dynamic=True, authority="physx"),
+                Actor("plate.usda", "/World/plate", dynamic=False, authority="physx"),
                 Actor(
                     "soft.usd",
                     "/World/actors/soft",
@@ -171,6 +171,7 @@ class SensorMappingTests(unittest.TestCase):
                     "/World/actors/slot",
                     dynamic=False,
                     uipc_fixed_mesh="slot_tet.npz",
+                    authority="physx",
                 ),
             )
         )
@@ -222,7 +223,7 @@ class SensorMappingTests(unittest.TestCase):
     def test_abd_actor_keeps_default_material(self) -> None:
         physx, uipc = objects_from_actors(
             (
-                Actor("usb.usd", "/World/actors/usb"),
+                Actor("usb.usd", "/World/actors/usb", authority="physx"),
                 Actor(
                     "soft.usd",
                     "/World/actors/soft",
@@ -235,6 +236,25 @@ class SensorMappingTests(unittest.TestCase):
             self.assertEqual(obj.constitution, "abd")
             self.assertIsNone(obj.youngs_mpa)
             self.assertIsNone(obj.poisson)
+
+    def test_weight_classify_density_reaches_object_cfg(self) -> None:
+        from openvitac_tasks.tasks.weight_classify import WeightClassify
+
+        objects = {
+            obj.name: obj for obj in objects_from_actors(WeightClassify.actors)
+        }
+        self.assertEqual(objects["light_block"].density_kg_m3, 100.0)
+        self.assertEqual(objects["heavy_block"].density_kg_m3, 30000.0)
+
+    def test_unset_density_keeps_the_default(self) -> None:
+        actor = Actor(
+            "block.usd",
+            "/World/actors/block",
+            authority="uipc",
+            tactile_mesh="block_tet.npz",
+        )
+        (obj,) = objects_from_actors((actor,))
+        self.assertEqual(obj.density_kg_m3, 1.0e3)
 
 
 class _CaptureRuntime:
@@ -375,6 +395,49 @@ class BridgeTests(unittest.TestCase):
         np.testing.assert_allclose(
             np.asarray(objects[0]["T_world0"]).reshape(4, 4), obj
         )
+
+    def test_reset_overrides_exactly_one_contact_object(self) -> None:
+        capture = _CaptureRuntime()
+        bridge = TactileBridge(
+            tactile_cfg_from_sensor(
+                _sensor(),
+                objects=(
+                    ObjectCfg("usb", "/World/actors/usb"),
+                    ObjectCfg("slot", "/World/actors/slot"),
+                ),
+            ),
+            run_id="contact_object",
+            runtime=cast(TactileRuntime, capture),
+        )
+        bridge.start()
+        frames = {pad.name: np.eye(4) for pad in bridge.cfg.pads}
+        poses = {"usb": np.eye(4), "slot": np.eye(4)}
+        bridge.reset(
+            pad_frames=frames,
+            object_poses=poses,
+            contact_object="/World/actors/slot",
+        )
+        request = capture.requests[0]
+        config = cast(dict[str, Any], request["config"])
+        objects = cast(list[dict[str, Any]], config["objects"])
+        self.assertEqual(
+            {obj["name"]: obj["contact_object"] for obj in objects},
+            {"usb": False, "slot": True},
+        )
+        self.assertEqual(
+            [obj.contact_object for obj in bridge.cfg.objects], [False, False]
+        )
+        self.assertEqual(
+            [obj.contact_object for obj in bridge.episode_cfg.objects],
+            [False, True],
+        )
+        with self.assertRaises(ValueError):
+            bridge.reset(
+                pad_frames=frames,
+                object_poses=poses,
+                contact_object="/World/actors/missing",
+            )
+        self.assertEqual(len(capture.requests), 1)
 
     def test_reset_rejects_a_negative_seed(self) -> None:
         capture = _CaptureRuntime()

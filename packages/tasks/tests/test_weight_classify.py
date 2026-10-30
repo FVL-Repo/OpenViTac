@@ -8,13 +8,14 @@ from typing import Any
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
+from openvitac_tasks.motion import HAND_TO_GEL_FACE
 from openvitac_tasks.tasks.weight_classify import (
     _APPROACH_CLEARANCE,
     _BLOCK_STANDBY_BY_LABEL,
     _BLOCK_START_POS,
+    _CLOSE_Q,
     _DENSITY_BY_LABEL,
     _GRASP_HEIGHT,
-    _HAND_TO_GRASP,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     WeightClassify,
@@ -42,12 +43,14 @@ class _Gripper:
 
     def set_target(self, qpos: float) -> None:
         world = self._world
-        if qpos == self.close_qpos and self._qpos != self.close_qpos:
-            world.events.append(("close", 1))
+        # The task commands the width-derived close q, not the hardware limit.
+        if qpos == self.open_qpos:
+            if self._qpos != self.open_qpos:
+                world.events.append(("open", 1))
+                world.holding = False
+        elif qpos != self._qpos:
+            world.events.append(("close", qpos))
             world.holding = True
-        elif qpos == self.open_qpos and self._qpos != self.open_qpos:
-            world.events.append(("open", 1))
-            world.holding = False
         self._qpos = qpos
 
     def joint_pos(self) -> float:
@@ -87,7 +90,7 @@ class _Arm:
             world.blocks[world.label] = (
                 pos[0],
                 pos[1],
-                pos[2] - _HAND_TO_GRASP - _GRASP_HEIGHT,
+                pos[2] - HAND_TO_GEL_FACE - _GRASP_HEIGHT,
             )
 
 
@@ -214,6 +217,15 @@ class WeightClassifyTests(unittest.TestCase):
             blocks["/World/actors/heavy_block"].usd,
         )
 
+    def test_close_position_per_block(self) -> None:
+        # 15.00 mm block -> 2.936 mm (1 mm gel overtravel; measured pad-face
+        # gap 7.1276 mm at q=0), and the expert commands exactly that.
+        self.assertAlmostEqual(_CLOSE_Q, 0.0029362, places=7)
+        world = _World("heavy")
+        _run(world)
+        close_q = next(event[1] for event in world.events if event[0] == "close")
+        self.assertAlmostEqual(close_q, _CLOSE_Q, places=12)
+
     def test_success_uses_selected_label_and_plate(self) -> None:
         for label in _BLOCKS:
             target = _PLATES[_TARGETS[label]]
@@ -226,7 +238,7 @@ class WeightClassifyTests(unittest.TestCase):
                 target[2]
                 + _TARGET_BLOCK_Z
                 + _GRASP_HEIGHT
-                + _HAND_TO_GRASP
+                + HAND_TO_GEL_FACE
                 + _APPROACH_CLEARANCE,
             )
             self.assertTrue(next(WeightClassify.success(world)))
@@ -246,7 +258,7 @@ class WeightClassifyTests(unittest.TestCase):
             target[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE
         )
         self.assertGreaterEqual(world.ee[2], retract_z - _SUCCESS_Z_TOLERANCE)

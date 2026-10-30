@@ -30,11 +30,11 @@ class DepthCameraMeta:
     used for the array: ``distance_to_image_plane`` stores perpendicular
     distance along the camera's optical axis.
 
-    ``surface`` records which gel sheet the authored camera sees after the
-    tactile near-plane fix: ``"contact_far"`` means the near sheet is clipped and
-    the depth/marker image comes from the live far/contact gel surface, not from
-    the object.  ``outside_aperture`` says how pixels outside the far-sheet
-    footprint are represented in the depth array; the scene writes zero.
+    ``surface`` names what the depth image measures: ``"object"`` is the
+    optical-axis distance to the nearest declared contact object (the imaging
+    model's input), and the legacy ``"contact_far"`` marked a live gel-sheet
+    capture.  ``outside_aperture`` says how pixels outside the fixed aperture
+    are represented in the depth array; the scene writes zero.
     """
 
     width: int
@@ -46,7 +46,7 @@ class DepthCameraMeta:
     semantics: Literal[
         "distance_to_image_plane", "distance_to_camera"
     ] = "distance_to_image_plane"
-    surface: Literal["contact_far"] = "contact_far"
+    surface: Literal["contact_far", "object"] = "contact_far"
     outside_aperture: Literal["zero", "nan"] = "zero"
 
 
@@ -112,6 +112,13 @@ class PadTactileMeta:
     marker_cols: int | None = None
     contact_object: str | None = None
     """UIPC object whose surface the per-pad contact proxy measures (e.g. usb)."""
+    camera_from_pad: npt.NDArray[np.float64] | None = None
+    """(4, 4) camera <- pad calibration of the pad's imaging camera.
+
+    Constant for the pad's life: the camera is rigidly mounted on the case and
+    the pad frame is the gelpad's calibration frame.  Together with a per-frame
+    ``world <- camera`` pose it makes the imaging pass replayable offline.
+    """
     depth_camera: DepthCameraMeta | None = None
     """Authored depth camera calibrated for this pad, when one is recorded."""
 
@@ -145,6 +152,12 @@ class ObjectMeta:
     initial_pose_xyzw: npt.NDArray[np.float32] | None = None  # (7,)
     usd: str | None = None
     mesh_checksum: str | None = None
+    imaging: bool = False
+    """Whether this object's USD surface is z-buffered into the height field.
+
+    The imaging set is the scene's dynamic actor set; static fixtures and UIPC
+    fixed collision copies exist for physics only and are never imaged.
+    """
 
 
 @dataclass(frozen=True)
@@ -192,6 +205,8 @@ class TactileFrame:
     timestamp_us: int | npt.NDArray[np.int64] | None = None
     pad_usb_min_sd_mm: float | npt.NDArray[np.float32] | None = None
     pad_usb_contact_vertices: int | npt.NDArray[np.int32] | None = None
+    camera_pose: npt.NDArray[np.float64] | None = None  # (4,4) or (T,4,4)
+    """``world <- camera`` used by the imaging pass for this frame."""
     depth: npt.NDArray[np.float32] | None = None  # (H, W) or (T, H, W), metres
     rgb: npt.NDArray[np.uint8] | None = None  # (H, W, 3) or (T, H, W, 3)
     marker_rgb: npt.NDArray[np.uint8] | None = None  # (H, W, 3) or (T, H, W, 3)

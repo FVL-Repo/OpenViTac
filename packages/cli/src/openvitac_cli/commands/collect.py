@@ -250,6 +250,7 @@ def _tactile_meta(
     pad_world_frames: Mapping[str, Any],
     pad_surfaces: Mapping[str, PadSurface],
     depth_specs: Mapping[str, DepthCameraCfg] | None = None,
+    camera_frames: Mapping[str, Any] | None = None,
 ) -> tuple[tuple[PadTactileMeta, ...], tuple[ObjectMeta, ...]]:
     """Build the v3 /meta/tactile and /meta/objects dataclasses.
 
@@ -307,6 +308,11 @@ def _tactile_meta(
                 marker_cols=pad.marker_cols,
                 contact_object=contact_object,
                 image_streams=tuple(pad.render_kinds),
+                camera_from_pad=(
+                    np.asarray(camera_frames[pad.side], dtype=np.float64)
+                    if camera_frames is not None and pad.side in camera_frames
+                    else None
+                ),
                 depth_camera=(
                     DepthCameraMeta(
                         width=depth_spec.width,
@@ -316,6 +322,7 @@ def _tactile_meta(
                         vertical_aperture=depth_spec.vertical_aperture,
                         clipping_range=depth_spec.clipping_range,
                         semantics=depth_spec.data_type,
+                        surface="object",
                     )
                     if depth_spec is not None
                     else None
@@ -329,6 +336,7 @@ def _tactile_meta(
             authority=obj.authority,
             constitution=obj.constitution,
             usd=obj.usd_path,
+            imaging=not obj.fixed,
         )
         for obj in cfg.objects
     )
@@ -353,6 +361,8 @@ def _tactile_payload(
         [str], tuple[tuple[float, float, float], tuple[float, float, float, float]]
     ]
     | None = None,
+    camera_poses: Mapping[str, npt.NDArray[np.floating[Any]]] | None = None,
+    render_poses: Mapping[str, npt.NDArray[np.floating[Any]]] | None = None,
 ) -> tuple[dict[str, TactileFrame], dict[str, ObjectFrame]]:
     """Map the sim-side tactile projection to v3 Frame payloads.
 
@@ -393,6 +403,11 @@ def _tactile_payload(
             timestamp_us=timestamp_us,
             pad_usb_min_sd_mm=pad.pad_usb_min_sd_mm,
             pad_usb_contact_vertices=pad.pad_usb_contact_vertices,
+            camera_pose=(
+                np.asarray(camera_poses[side], dtype=np.float64)
+                if camera_poses is not None and side in camera_poses
+                else None
+            ),
             depth=observation.tactile_depth.get(side),
             rgb=observation.tactile_rgb.get(side),
             marker_rgb=observation.tactile_marker_rgb.get(side),
@@ -419,6 +434,11 @@ def _tactile_payload(
                 valid = _pose_is_valid(pose)
         objects[name] = ObjectFrame(
             pose_xyzw=pose,
+            T=(
+                np.asarray(render_poses[name], dtype=np.float64)
+                if render_poses is not None and name in render_poses
+                else None
+            ),
             seq=observation.seq,
             valid=valid,
         )
@@ -635,7 +655,7 @@ def _prepare_episode(
         pos_eps=_SETTLE_POS_EPS_M,
         rot_eps=_SETTLE_ROT_EPS_RAD,
     )
-    scene.start_tactile()
+    scene.start_tactile(contact_object=randomization.contact_object)
     scene.set_expert_params(randomization.expert_context())
     randomization_meta = randomization.to_metadata()
     # Pre-rollout steps are not episode frames; record what actually ran.
@@ -718,14 +738,18 @@ def _record(
     tactile_meta: tuple[PadTactileMeta, ...] = ()
     object_meta: tuple[ObjectMeta, ...] = ()
     if tactile_cfg is not None:
+        # The episode reset may name a different contact object than the task
+        # spec; /meta must describe the object the worker actually measured.
+        episode_cfg = scene.tactile_episode_cfg or tactile_cfg
         pad_surfaces = scene.tactile_pad_surfaces()
         if not pad_surfaces:
             raise RuntimeError("tactile bridge is unavailable after Scene.reset()")
         tactile_meta, object_meta = _tactile_meta(
-            tactile_cfg,
+            episode_cfg,
             pad_world_frames=scene.tactile_pad_world_frames(),
             pad_surfaces=pad_surfaces,
             depth_specs=scene.tactile_depth_specs,
+            camera_frames=scene.tactile_camera_frames(),
         )
     # Resolved at runtime from the articulation; public order = joint_pos order.
     joint_names = scene.arm.joint_names
@@ -796,6 +820,8 @@ def _record(
                         obj.name: obj.authority for obj in tactile_cfg.objects
                     },
                     pose_reader=scene.object_pose,
+                    camera_poses=obs.tactile_cameras,
+                    render_poses=obs.tactile_objects,
                 )
             frame = Frame(
                 images={

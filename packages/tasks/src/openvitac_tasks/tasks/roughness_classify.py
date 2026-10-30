@@ -23,17 +23,43 @@ from openvitac_spec import (
 
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
-from ..motion import Hold, Move, advance_move, begin_move
+from ..motion import (
+    HAND_TO_GEL_FACE,
+    Hold,
+    Move,
+    advance_move,
+    align_pad_to_face,
+    begin_move,
+    pad_close_q,
+    quat_rotate,
+)
 
 _HEAD_CAM_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)  # 2.x camera offset was WXYZ
 
 _LABELS = ("smooth", "rough")
 _BLOCK_BY_LABEL = {"smooth": "smooth_block", "rough": "rough_block"}
 _PLATE_BY_LABEL = {"smooth": "blue_plate", "rough": "yellow_plate"}
-_BLOCK_START_POS = (0.38, 0.0, 0.002)
-_BLOCK_STANDBY_POS = (0.30, 0.25, 0.002)
-_HAND_TO_GRASP = 0.131
+# The table top is at 2.5 mm (a 1 m cube scaled to 5 mm in the authored USD).
+# Spawn 1.5 mm above it: PhysX settles the block onto the table, while UIPC
+# rejects any initial overlap with the fixed support body.
+_BLOCK_START_POS = (0.38, 0.0, 0.004)
+_BLOCK_STANDBY_POS = (0.30, 0.25, 0.004)
+# UIPC fixed supports mirror the PhysX table and the matching plate: box
+# centers/half extents are actor-local metres and their top faces sit exactly
+# on the authored surfaces (world z = 2.5 mm table, 8 mm plate).  Fixed bodies
+# must not overlap each other at init, so the table box starts just above the
+# UIPC floor (z = 0) and the plate box just above the table top.
+_TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.3, 0.3, 0.0012))
+_PLATE_SUPPORT_BOX = ((0.0, 0.0, 0.0033), (0.04, 0.04, 0.0027))
 _GRASP_HEIGHT = 0.035
+# Grasp width: the commanded close comes from the block width through the
+# shared close law (motion.pad_close_q).  The width comes from the asset bounds
+# (black_rough_cuboid.usd x,y bounds = +/-0.00794 m).  Siblings keep
+# close_qpos: they still grasp PhysX blocks, where the pad_proxy stops the
+# fingers before the gel.
+_BLOCK_WIDTH = 0.01588
+_GEL_THICKNESS = 0.004
+_CLOSE_Q = pad_close_q(_BLOCK_WIDTH)
 _APPROACH_CLEARANCE = 0.05
 _LIFT_HEIGHT = 0.05
 _TARGET_BLOCK_Z = 0.01
@@ -125,22 +151,22 @@ def _enter(
             goal = (
                 bx,
                 by,
-                grasp_z + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                grasp_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
             )
             ticks = 120
         case _RoughnessPhase.DESCEND:
             (bx, by, bz), _ = world.object_pose(block)
             grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + _HAND_TO_GRASP)
+            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE)
             ticks = _MOVE_TICKS
         case _RoughnessPhase.CLOSE:
-            qpos = world.arm.gripper.close_qpos
+            qpos = _CLOSE_Q  # gel face _GRASP_OVERTRAVEL into the block per side
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
         case _RoughnessPhase.LIFT:
             (bx, by, bz), _ = world.object_pose(block)
             grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + _HAND_TO_GRASP + _LIFT_HEIGHT)
+            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE + _LIFT_HEIGHT)
             ticks = 90
         case _RoughnessPhase.CARRY:
             (tx, ty, tz), _ = world.object_pose(plate)
@@ -148,13 +174,13 @@ def _enter(
             goal = (
                 tx,
                 ty,
-                place_z + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
             )
             ticks = 120
         case _RoughnessPhase.PLACE:
             (tx, ty, tz), _ = world.object_pose(plate)
             place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (tx, ty, place_z + _HAND_TO_GRASP)
+            goal = (tx, ty, place_z + HAND_TO_GEL_FACE)
             ticks = 90
         case _RoughnessPhase.OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -166,7 +192,7 @@ def _enter(
             goal = (
                 tx,
                 ty,
-                place_z + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
             )
             ticks = 90
         case _RoughnessPhase.INIT | _RoughnessPhase.DONE:
@@ -206,6 +232,11 @@ class _RoughnessExpert:
     ) -> tuple[_RoughnessState, Action] | None:
         if state.phase is _RoughnessPhase.INIT:
             pos, quat = world.arm.ee_pose()
+            # Parallel the pad plane to the block's +/-y face instead of
+            # inheriting the home pose: the 1.28 deg error there, times the
+            # 118.3 mm lever to the gel face, is 2.6 mm of lateral grasp error.
+            _, bquat = world.object_pose(_BLOCK_BY_LABEL[_label(world)])
+            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
             state = replace(
                 state,
                 label=_label(world),
@@ -276,7 +307,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
             tz
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE
         )
         retracted = (
@@ -313,26 +344,46 @@ RoughnessClassify = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            uipc_fixed_boxes=(_TABLE_SUPPORT_BOX,),
+            authority="physx",
+        ),
+        # Both plates are static so the UIPC world owns them as fixed bodies
+        # (a dynamic actor cannot declare a fixed UIPC collision copy); identical
+        # plates must also share one rest height.
         Actor(
             "roughness_task/blue_square_plate.usd",
             "/World/actors/blue_plate",
             pos=(0.45, 0.08, 0.002),
+            dynamic=False,
+            uipc_fixed_boxes=(_PLATE_SUPPORT_BOX,),
+            authority="physx",
         ),
         Actor(
             "roughness_task/yellow_square_plate.usd",
             "/World/actors/yellow_plate",
             pos=(0.45, -0.08, 0.002),
+            dynamic=False,
+            uipc_fixed_boxes=(_PLATE_SUPPORT_BOX,),
+            authority="physx",
         ),
         Actor(
             "roughness_task/black_smooth_cuboid.usd",
             "/World/actors/smooth_block",
             pos=_BLOCK_STANDBY_POS,
+            authority="physx",
         ),
         Actor(
             "roughness_task/black_rough_cuboid.usd",
             "/World/actors/rough_block",
             pos=_BLOCK_START_POS,
+            authority="uipc",
+            tactile_mesh="roughness_task/black_rough_cuboid_tet.npz",
+            contact_object=True,
         ),
     ),
     instruction=(

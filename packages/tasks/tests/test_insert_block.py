@@ -4,31 +4,42 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import unittest
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
+from openvitac_tasks.motion import (
+    HAND_TO_GEL_FACE,
+    hand_for_pad_midpoint,
+    pad_close_q,
+    pad_midpoint,
+)
 from openvitac_tasks.tasks.insert_block import (
+    _BLOCK_WIDTH_BY_ACTOR,
+    _BLOCK_XY_NOISE,
     _BOX_SIZE,
-    _HAND_TO_GRASP,
+    _CLOSE_Q_BY_BLOCK,
+    _GRASP_HEIGHT,
     _INSERT_DEPTH,
     _RELEASE_RETRACT,
     _SETTLE_STEPS,
     InsertBlock,
 )
 
-_BOX = (0.48, -0.12, 0.002)
+_BOX = (0.48, -0.12, 0.0026)
 _ACTOR = {
     "cube": "block_blue_cube",
     "half_cylinder": "block_blue_half_cylinder",
     "hexagon": "block_red_hexagonal_prism",
 }
 _BLOCKS = {
-    "block_blue_cube": ((0.45, 0.15, 0.002), (0.0, 0.0, 0.0, 1.0)),
-    "block_blue_half_cylinder": ((0.37, 0.08, 0.002), (0.0, 0.0, 0.0, 1.0)),
-    "block_red_hexagonal_prism": ((0.36, 0.24, 0.002), (0.0, 0.0, 0.0, 1.0)),
+    "block_blue_cube": ((0.45, 0.15, 0.004), (0.0, 0.0, 0.0, 1.0)),
+    "block_blue_half_cylinder": ((0.37, 0.08, 0.004), (0.0, 0.0, 0.0, 1.0)),
+    "block_red_hexagonal_prism": ((0.36, 0.24, 0.004), (0.0, 0.0, 0.0, 1.0)),
 }
 _HOLES = {
     "cube": (-0.035, 0.03),
@@ -56,19 +67,21 @@ class _Gripper:
 
     def set_target(self, qpos: float) -> None:
         world = self._world
-        if qpos == self.close_qpos and self._qpos != self.close_qpos:
-            world.events.append(("close", 1))
+        # The task commands the shape's width-derived close q, not the limit.
+        if qpos == self.open_qpos:
+            if self._qpos != self.open_qpos:
+                world.events.append(("open", 1))
+                # The real block falls through the top plate to the box floor.
+                if world.holding is not None:
+                    x, y, _ = world.poses[world.holding][0]
+                    world.poses[world.holding] = (
+                        (x, y, _BOX[2] + 0.006),
+                        (0.0, 0.0, 0.0, 1.0),
+                    )
+                world.holding = None
+        elif qpos != self._qpos:
+            world.events.append(("close", qpos))
             world.holding = world.actor
-        elif qpos == self.open_qpos and self._qpos != self.open_qpos:
-            world.events.append(("open", 1))
-            # The real block falls through the top plate to the box floor.
-            if world.holding is not None:
-                x, y, _ = world.poses[world.holding][0]
-                world.poses[world.holding] = (
-                    (x, y, _BOX[2] + 0.006),
-                    (0.0, 0.0, 0.0, 1.0),
-                )
-            world.holding = None
         self._qpos = qpos
 
     def joint_pos(self) -> float:
@@ -131,7 +144,7 @@ class _World:
         self.quat = (0.0, 0.0, 0.0, 1.0)
         self.holding: str | None = None
         self.steps = 0
-        self.events: list[tuple[object, ...]] = []
+        self.events: list[tuple[Any, ...]] = []
         self._gripper = _Gripper(self)
         self._arm = _Arm(self)
 
@@ -216,16 +229,37 @@ class InsertBlockTests(unittest.TestCase):
                 pose = randomization.actor_poses[f"/World/actors/{block}"]
                 self.assertAlmostEqual(pose.position[2], _BLOCKS[block][0][2])
                 self.assertLessEqual(
-                    abs(pose.position[0] - base[block].pos[0]), 0.02
+                    abs(pose.position[0] - base[block].pos[0]), _BLOCK_XY_NOISE
                 )
                 self.assertLessEqual(
-                    abs(pose.position[1] - base[block].pos[1]), 0.02
+                    abs(pose.position[1] - base[block].pos[1]), _BLOCK_XY_NOISE
                 )
         self.assertEqual(seen, set(_ACTOR))
 
+    def test_close_position_per_shape(self) -> None:
+        # 1 mm gel overtravel per side; measured pad-face gap 7.1276 mm at q=0.
+        self.assertAlmostEqual(
+            _CLOSE_Q_BY_BLOCK["block_blue_cube"], 0.0154362, places=7
+        )
+        self.assertAlmostEqual(
+            _CLOSE_Q_BY_BLOCK["block_blue_half_cylinder"], 0.0079362, places=7
+        )
+        self.assertAlmostEqual(
+            _CLOSE_Q_BY_BLOCK["block_red_hexagonal_prism"], 0.0110242, places=7
+        )
+        for target, actor in _ACTOR.items():
+            world = _World(target)
+            _run(world)
+            close_q = next(
+                event[1] for event in world.events if event[0] == "close"
+            )
+            self.assertAlmostEqual(
+                float(close_q), _CLOSE_Q_BY_BLOCK[actor], places=12
+            )
+
     def test_success_requires_cavity_in_box_frame(self) -> None:
         retract_z = (
-            _BOX[2] + _BOX_SIZE + _HAND_TO_GRASP + _RELEASE_RETRACT - _INSERT_DEPTH
+            _BOX[2] + _BOX_SIZE + HAND_TO_GEL_FACE + _RELEASE_RETRACT - _INSERT_DEPTH
         )
         for target, actor in _ACTOR.items():
             world = _World(target)
@@ -266,7 +300,7 @@ class InsertBlockTests(unittest.TestCase):
         world.ee = (
             _BOX[0] - local[1],
             _BOX[1] + local[0],
-            _BOX[2] + _BOX_SIZE + _HAND_TO_GRASP + _RELEASE_RETRACT - _INSERT_DEPTH,
+            _BOX[2] + _BOX_SIZE + HAND_TO_GEL_FACE + _RELEASE_RETRACT - _INSERT_DEPTH,
         )
         world.arm.gripper.set_target(world.arm.gripper.open_qpos)
         self.assertTrue(_fires(InsertBlock.success(world)))
@@ -306,7 +340,7 @@ class InsertBlockTests(unittest.TestCase):
         box_top = world.poses["box_with_holes_yellow"][0][2] + _BOX_SIZE
         self.assertGreaterEqual(
             world.ee[2],
-            box_top + _HAND_TO_GRASP + _RELEASE_RETRACT - _INSERT_DEPTH,
+            box_top + HAND_TO_GEL_FACE + _RELEASE_RETRACT - _INSERT_DEPTH,
         )
 
     def test_expert_respects_step_budget(self) -> None:
@@ -317,3 +351,130 @@ class InsertBlockTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _cross_section(points: Any, faces: Any, z: float) -> Any:
+    """Intersection points of a triangle mesh with the plane z=const."""
+    import numpy as np
+
+    out = []
+    for tri in faces:
+        v = points[tri]
+        d = v[:, 2] - z
+        if (d > 0).all() or (d < 0).all():
+            continue
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            if (d[a] > 0) != (d[b] > 0):
+                t = d[a] / (d[a] - d[b])
+                out.append(v[a][:2] + t * (v[b][:2] - v[a][:2]))
+    return np.array(out)
+
+
+class InsertBlockWidthTests(unittest.TestCase):
+    """The close law must use the cross-section at the pad plane, not the bbox.
+
+    The three shipped blocks are z-extruded prisms, so their width across the
+    closing axis (local y) is constant over the pad's face; this test samples
+    the usd at three planes inside that face and pins the constants.  A shape
+    whose width varies with height would fail here, because a bbox width would
+    then over- or under-close.
+    """
+
+    def test_close_width_is_the_cross_section_at_the_pad_plane(self) -> None:
+        import numpy as np
+        from pxr import Usd, UsdGeom
+
+        assets = Path(__file__).resolve().parents[3] / "assets"
+        for shape, actor in _ACTOR.items():
+            with self.subTest(shape=shape):
+                stage = Usd.Stage.Open(
+                    str(assets / "insert_block" / f"{actor}.usd")
+                )
+                mesh = next(
+                    p for p in stage.Traverse() if p.IsA(UsdGeom.Mesh)
+                )
+                m = UsdGeom.Mesh(mesh)
+                P = np.array(
+                    [[q[0], q[1], q[2]] for q in m.GetPointsAttr().Get()]
+                )
+                idx = np.array(
+                    m.GetFaceVertexIndicesAttr().Get(), dtype=np.int64
+                )
+                counts = np.array(
+                    m.GetFaceVertexCountsAttr().Get(), dtype=np.int64
+                )
+                tris: list[tuple[int, int, int]] = []
+                k = 0
+                for c in counts:
+                    f = idx[k : k + c]
+                    k += c
+                    for i in range(1, c - 1):
+                        tris.append((int(f[0]), int(f[i]), int(f[i + 1])))
+                F = np.array(tris, dtype=np.int64)
+                # 15..30 mm spans the pad face; the pad centre sits in it.
+                for z in (0.015, 0.020, 0.030):
+                    section = _cross_section(P, F, z)
+                    self.assertGreater(len(section), 0)
+                    width = float(np.ptp(section[:, 1]))
+                    self.assertAlmostEqual(
+                        width,
+                        _BLOCK_WIDTH_BY_ACTOR[actor],
+                        delta=1e-5,
+                        msg=f"{shape}: width at z={z} differs from the "
+                        "pinned value",
+                    )
+                self.assertAlmostEqual(
+                    _CLOSE_Q_BY_BLOCK[actor],
+                    pad_close_q(_BLOCK_WIDTH_BY_ACTOR[actor]),
+                    places=12,
+                )
+
+
+class InsertBlockGraspPlaneTests(unittest.TestCase):
+    """The pad pair's mid-plane must sit on the block's grasp mid-plane.
+
+    The pad plane is aligned to the block's +-y face, so the hand's finger axis
+    is tilted; placing the hand by a world-z sum left the pads ~17.5 mm off in x
+    and ~9.6 mm above the mid-plane, one pad seated and the other pressing air.
+    ``hand_for_pad_midpoint`` rotates the pad offset with the hand instead.
+    """
+
+    def test_pad_midplane_matches_the_block_midplane(self) -> None:
+        # Representative grasp tilt: the hand is inverted (fingers down), its
+        # +z axis = (0.150, 0, -0.989) - an 8.6 deg lean off straight down, the
+        # measured tilt (17.5 mm of the 116.67 mm hand-to-pad arm).
+        half = math.radians(171.4) / 2.0
+        quat = (0.0, math.sin(half), 0.0, math.cos(half))
+        for shape, actor in _ACTOR.items():
+            bx, by, bz = _BLOCKS[actor][0]
+            pad_mid = (bx, by, bz + _GRASP_HEIGHT)
+            hand = hand_for_pad_midpoint(pad_mid, quat)
+            got = pad_midpoint(hand, quat)
+            for g, w in zip(got, pad_mid, strict=True):
+                self.assertAlmostEqual(
+                    g,
+                    w,
+                    delta=1e-9,
+                    msg=f"{shape}: pad mid-plane is off the block mid-plane",
+                )
+            # The pre-fix target added the pad offset to world z only.
+            old_mid = pad_midpoint(
+                (bx, by, bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE), quat
+            )
+            err = math.dist(old_mid, pad_mid)
+            self.assertAlmostEqual(
+                err,
+                0.0177,
+                delta=5e-4,
+                msg=f"{shape}: the old z-sum formula's offset changed",
+            )
+            self.assertGreater(err, 0.010)
+
+    def test_pre_grasp_keeps_the_pads_above_the_block(self) -> None:
+        half = math.radians(171.4) / 2.0
+        quat = (0.0, math.sin(half), 0.0, math.cos(half))
+        pad_mid = (0.40, -0.10, 0.004 + _GRASP_HEIGHT)
+        hand = hand_for_pad_midpoint(pad_mid, quat, clearance=0.09)
+        self.assertGreater(
+            pad_midpoint(hand, quat)[2], 0.004 + _GRASP_HEIGHT + 0.08
+        )

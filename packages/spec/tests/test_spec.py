@@ -194,9 +194,15 @@ class SpecConstructionTests(unittest.TestCase):
                 "fixture.usd",
                 "/World/fixture",
                 uipc_fixed_boxes=(((0.0, 0.0, 0.0), (0.1, 0.1, 0.1)),),
+                authority="physx",
             )
         with self.assertRaisesRegex(ValueError, "uipc_fixed_mesh"):
-            Actor("fixture.usd", "/World/fixture", uipc_fixed_mesh="slot_tet.npz")
+            Actor(
+                "fixture.usd",
+                "/World/fixture",
+                uipc_fixed_mesh="slot_tet.npz",
+                authority="physx",
+            )
 
     def test_static_fixture_may_carry_uipc_fixed_bodies(self) -> None:
         boxes = Actor(
@@ -204,6 +210,7 @@ class SpecConstructionTests(unittest.TestCase):
             "/World/fixture",
             dynamic=False,
             uipc_fixed_boxes=(((0.0, 0.0, 0.0), (0.1, 0.1, 0.1)),),
+            authority="physx",
         )
         self.assertEqual(len(boxes.uipc_fixed_boxes), 1)
         mesh = Actor(
@@ -211,17 +218,18 @@ class SpecConstructionTests(unittest.TestCase):
             "/World/fixture",
             dynamic=False,
             uipc_fixed_mesh="slot_tet.npz",
+            authority="physx",
         )
         self.assertEqual(mesh.uipc_fixed_mesh, "slot_tet.npz")
 
     def test_actor_density_is_optional_and_positive(self) -> None:
-        self.assertIsNone(Actor("block.usd", "/World/block").density)
-        actor = Actor("block.usd", "/World/block", density=1.0e2)
+        self.assertIsNone(Actor("block.usd", "/World/block", authority="physx").density)
+        actor = Actor("block.usd", "/World/block", density=1.0e2, authority="physx")
         self.assertEqual(actor.density, 1.0e2)
         with self.assertRaises(ValueError):
-            Actor("block.usd", "/World/block", density=0.0)
+            Actor("block.usd", "/World/block", density=0.0, authority="physx")
         with self.assertRaises(ValueError):
-            Actor("block.usd", "/World/block", density=-1.0)
+            Actor("block.usd", "/World/block", density=-1.0, authority="physx")
 
     def test_dynamic_uipc_actor_accepts_fem_material(self) -> None:
         actor = Actor(
@@ -244,9 +252,19 @@ class SpecConstructionTests(unittest.TestCase):
             "constitution": "fem",
         }
         with self.assertRaisesRegex(ValueError, "youngs_mpa"):
-            Actor("soft.usd", "/World/actors/soft", poisson=0.45, **kwargs)
+            Actor(
+                "soft.usd",
+                "/World/actors/soft",
+                poisson=0.45,
+                **kwargs,
+            )
         with self.assertRaisesRegex(ValueError, "poisson"):
-            Actor("soft.usd", "/World/actors/soft", youngs_mpa=10.0, **kwargs)
+            Actor(
+                "soft.usd",
+                "/World/actors/soft",
+                youngs_mpa=10.0,
+                **kwargs,
+            )
 
     def test_fem_material_ranges_match_object_cfg(self) -> None:
         kwargs: dict[str, Any] = {
@@ -256,9 +274,19 @@ class SpecConstructionTests(unittest.TestCase):
             "poisson": 0.45,
         }
         with self.assertRaisesRegex(ValueError, "youngs_mpa"):
-            Actor("soft.usd", "/World/actors/soft", youngs_mpa=0.0, **kwargs)
+            Actor(
+                "soft.usd",
+                "/World/actors/soft",
+                youngs_mpa=0.0,
+                **kwargs,
+            )
         with self.assertRaisesRegex(ValueError, "youngs_mpa"):
-            Actor("soft.usd", "/World/actors/soft", youngs_mpa=-1.0, **kwargs)
+            Actor(
+                "soft.usd",
+                "/World/actors/soft",
+                youngs_mpa=-1.0,
+                **kwargs,
+            )
         kwargs["youngs_mpa"] = 10.0
         for poisson in (-0.1, 0.5):
             with self.assertRaisesRegex(ValueError, r"poisson.*\[0, 0.5\)"):
@@ -288,7 +316,12 @@ class SpecConstructionTests(unittest.TestCase):
             "poisson": 0.45,
         }
         with self.assertRaisesRegex(ValueError, "dynamic UIPC"):
-            Actor("block.usd", "/World/block", **kwargs)  # PhysX by default
+            Actor(
+                "block.usd",
+                "/World/block",
+                authority="physx",
+                **kwargs,
+            )
         with self.assertRaisesRegex(ValueError, "dynamic UIPC"):
             Actor(
                 "fixture.usd",
@@ -304,12 +337,13 @@ class SpecConstructionTests(unittest.TestCase):
                 "block.usd",
                 "/World/block",
                 constitution=cast(Any, "snh"),
+                authority="physx",
             )
 
 
 class SceneSpecIdentityTests(unittest.TestCase):
     def test_duplicate_actor_prim_paths_are_rejected(self) -> None:
-        actor = Actor("block.usd", "/World/block")
+        actor = Actor("block.usd", "/World/block", authority="physx")
         with self.assertRaisesRegex(ValueError, "actors prim_path"):
             _scene(actors=(actor, actor))
 
@@ -325,7 +359,7 @@ class SceneSpecIdentityTests(unittest.TestCase):
     def test_joint_parent_must_be_an_actor(self) -> None:
         with self.assertRaisesRegex(ValueError, "joints parent"):
             _scene(
-                actors=(Actor("gear.usd", "/World/actors/gear"),),
+                actors=(Actor("gear.usd", "/World/actors/gear", authority="physx"),),
                 joints=(
                     Joint(
                         "/World/joints/gear",
@@ -338,7 +372,14 @@ class SceneSpecIdentityTests(unittest.TestCase):
     def test_joint_child_must_be_an_actor(self) -> None:
         with self.assertRaisesRegex(ValueError, "joints child"):
             _scene(
-                actors=(Actor("base.usd", "/World/actors/base", dynamic=False),),
+                actors=(
+                    Actor(
+                        "base.usd",
+                        "/World/actors/base",
+                        dynamic=False,
+                        authority="physx",
+                    ),
+                ),
                 joints=(
                     Joint(
                         "/World/joints/gear",
@@ -350,7 +391,7 @@ class SceneSpecIdentityTests(unittest.TestCase):
 
     def test_joint_without_parent_is_accepted(self) -> None:
         scene = _scene(
-            actors=(Actor("gear.usd", "/World/actors/gear"),),
+            actors=(Actor("gear.usd", "/World/actors/gear", authority="physx"),),
             joints=(
                 Joint("/World/joints/gear", None, "/World/actors/gear"),
             ),
@@ -360,8 +401,13 @@ class SceneSpecIdentityTests(unittest.TestCase):
     def test_joint_between_actors_is_accepted(self) -> None:
         scene = _scene(
             actors=(
-                Actor("base.usd", "/World/actors/base", dynamic=False),
-                Actor("gear.usd", "/World/actors/gear"),
+                Actor(
+                    "base.usd",
+                    "/World/actors/base",
+                    dynamic=False,
+                    authority="physx",
+                ),
+                Actor("gear.usd", "/World/actors/gear", authority="physx"),
             ),
             joints=(
                 Joint(

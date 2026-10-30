@@ -26,7 +26,17 @@ from openvitac_spec import (
 
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
-from ..motion import Hold, Move, advance_move, begin_move
+from ..motion import (
+    HAND_TO_GEL_FACE,
+    Hold,
+    Move,
+    advance_move,
+    align_pad_to_face,
+    begin_move,
+    hand_for_pad_midpoint,
+    pad_close_q,
+    quat_rotate,
+)
 
 _HEAD_CAM_QUAT_XYZW = (0.362287, 0.344597, 0.596861, 0.627501)
 
@@ -35,17 +45,36 @@ _HEAD_CAM_QUAT_XYZW = (0.362287, 0.344597, 0.596861, 0.627501)
 # PhysX convex decomposition fills the three through-holes so the block cannot
 # enter; the box is static, where a triangle mesh is supported.
 _BOX_PRIM = "box_with_holes_yellow"
-_BOX_POS = (0.48, -0.12, 0.002)
+# 2.6 mm: the tet-mesh bottom sits 0.1 mm above the UIPC table support top
+# (2.5 mm), so the two fixed bodies do not overlap at init; the authored 2 mm
+# sank the box 0.5 mm into the table.
+_BOX_POS = (0.48, -0.12, 0.0026)
 _BOX_SIZE = 0.1500
 _BOX_WALL_THICKNESS = 0.0060
 _BLOCK_HEIGHT = 0.0400
-_BLOCK_XY_NOISE = 0.020
+# +/-15 mm keeps every block pair at least 5 mm apart on each axis in the worst
+# draw (the tightest pair, cube/half cylinder, is 80 x 70 mm apart and their
+# extents sum to 45 x 34.4 mm); a UIPC body cannot start overlapping another.
+_BLOCK_XY_NOISE = 0.015
 _GRASP_HEIGHT = _BLOCK_HEIGHT * 0.5
-# Command-space EE origin above the grasp point at the settled close pose.
-# Same calibration as the other pick/place tasks; it also keeps the finger
-# housings clear of the box top during the 10 mm insertion.
-_HAND_TO_GRASP = 0.131
 _APPROACH_CLEARANCE = 0.050
+# The approach arrives horizontally over a standing 40 mm block; clear its top
+# (the pad face is 25.3 mm tall, see roughness_regrasp) before descending.
+_TRANSIT_CLEARANCE = 0.09
+# Pad-face widths at the grasp height: cube 40.0 mm; half cylinder 25.0 mm
+# (flat face at y=-10.608 mm to the arc apex at +14.392 mm); hexagonal prism
+# 31.176 mm across the two grasped flats.  The close law presses 1 mm of gel
+# per side, so a blind close would crush the gel on every shape.
+_BLOCK_WIDTH_BY_ACTOR = {
+    "block_blue_cube": 0.040000,
+    "block_blue_half_cylinder": 0.025000,
+    "block_red_hexagonal_prism": 0.031176,
+}
+_CLOSE_Q_BY_BLOCK = {
+    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_ACTOR.items()
+}
+# UIPC fixed support for the table (actor-local box; top on the 2.5 mm table).
+_TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.3, 0.3, 0.0012))
 _CARRY_BLOCK_Z = 0.200  # block origin above the 152 mm box top
 _PRE_INSERT_CLEARANCE = 0.002
 _INSERT_DEPTH = 0.010
@@ -86,19 +115,19 @@ _BLOCK_SPECS: dict[str, _BlockSpec] = {
     "cube": _BlockSpec(
         "block_blue_cube",
         "blue cube",
-        (0.45, 0.15, 0.002),
+        (0.45, 0.15, 0.004),
         (-0.035000, 0.030000),
     ),
     "half_cylinder": _BlockSpec(
         "block_blue_half_cylinder",
         "blue half cylinder",
-        (0.37, 0.08, 0.002),
+        (0.37, 0.08, 0.004),
         (0.034000, -0.018117),
     ),
     "hexagon": _BlockSpec(
         "block_red_hexagonal_prism",
         "red hexagonal prism",
-        (0.36, 0.24, 0.002),
+        (0.36, 0.24, 0.004),
         (-0.026000, -0.036000),
     ),
 }
@@ -113,30 +142,13 @@ def _target(world: ExpertWorld) -> _BlockSpec:
     return _BLOCK_SPECS[key]
 
 
-def _rotate(
-    vector: tuple[float, float, float],
-    quat: tuple[float, float, float, float],
-) -> tuple[float, float, float]:
-    """Rotate ``vector`` by the XYZW quaternion ``quat``."""
-    x, y, z, w = quat
-    vx, vy, vz = vector
-    tx = 2.0 * (y * vz - z * vy)
-    ty = 2.0 * (z * vx - x * vz)
-    tz = 2.0 * (x * vy - y * vx)
-    return (
-        vx + w * tx + (y * tz - z * ty),
-        vy + w * ty + (z * tx - x * tz),
-        vz + w * tz + (x * ty - y * tx),
-    )
-
-
 def _box_to_world(
     xy: tuple[float, float],
     box_pos: tuple[float, float, float],
     box_quat: tuple[float, float, float, float],
 ) -> tuple[float, float]:
     """Box-local xy (at local z=0) in the world frame."""
-    dx, dy, _ = _rotate((xy[0], xy[1], 0.0), box_quat)
+    dx, dy, _ = quat_rotate(box_quat, (xy[0], xy[1], 0.0))
     return box_pos[0] + dx, box_pos[1] + dy
 
 
@@ -147,9 +159,9 @@ def _world_to_box(
 ) -> tuple[float, float, float]:
     """World position in the box frame (inverse of the static box pose)."""
     x, y, z, w = box_quat
-    return _rotate(
-        (pos[0] - box_pos[0], pos[1] - box_pos[1], pos[2] - box_pos[2]),
+    return quat_rotate(
         (-x, -y, -z, w),
+        (pos[0] - box_pos[0], pos[1] - box_pos[1], pos[2] - box_pos[2]),
     )
 
 
@@ -232,19 +244,25 @@ def _enter(
     assert spec is not None
     match phase:
         case _BlockPhase.PREGRASP:
+            # The pad plane is aligned to the block face, so the hand's finger
+            # axis is tilted; the pad midpoint (not the hand origin) must sit on
+            # the block's mid-plane at _GRASP_HEIGHT.
             (bx, by, bz), _ = world.object_pose(spec.actor)
-            goal = (
-                bx,
-                by,
-                bz + _GRASP_HEIGHT + _HAND_TO_GRASP + _APPROACH_CLEARANCE,
+            goal = hand_for_pad_midpoint(
+                (bx, by, bz + _GRASP_HEIGHT),
+                state.quat,
+                clearance=_TRANSIT_CLEARANCE,
             )
             ticks = 120
         case _BlockPhase.DESCEND:
             (bx, by, bz), _ = world.object_pose(spec.actor)
-            goal = (bx, by, bz + _GRASP_HEIGHT + _HAND_TO_GRASP)
+            goal = hand_for_pad_midpoint(
+                (bx, by, bz + _GRASP_HEIGHT), state.quat
+            )
             ticks = _MOVE_TICKS
         case _BlockPhase.CLOSE:
-            qpos = world.arm.gripper.close_qpos
+            # Gel face _GRASP_OVERTRAVEL into this block per side.
+            qpos = _CLOSE_Q_BY_BLOCK[spec.actor]
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(40))
             return state, _action(state)
         case _BlockPhase.LIFT:
@@ -347,13 +365,18 @@ class _BlockExpert:
     ) -> tuple[_BlockState, Action] | None:
         if state.phase is _BlockPhase.INIT:
             pos, quat = world.arm.ee_pose()
+            spec = _target(world)
+            # Parallel the pad plane to the target block's +/-y face; see
+            # roughness_classify for the lever-arm rationale.
+            _, bquat = world.object_pose(spec.actor)
+            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
             state = replace(
                 state,
                 quat=quat,
                 command_pos=pos,
                 command_quat=quat,
                 gripper_qpos=world.arm.gripper.joint_pos(),
-                spec=_target(world),
+                spec=spec,
             )
             return _enter(_BlockPhase.PREGRASP, world, state)
         if state.phase is _BlockPhase.DONE:
@@ -409,7 +432,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
         retract_z = (
             box_pos[2]
             + _BOX_SIZE
-            + _HAND_TO_GRASP
+            + HAND_TO_GEL_FACE
             + _RELEASE_RETRACT
             - _INSERT_DEPTH
         )
@@ -455,6 +478,7 @@ def _randomize(task: Task, seed: int) -> EpisodeRandomization:
             "yellow box."
         ),
         actor_poses=poses,
+        contact_object=f"/World/actors/{spec.actor}",
         metadata={"target_block": target},
     )
 
@@ -485,29 +509,46 @@ InsertBlock = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            uipc_fixed_boxes=(_TABLE_SUPPORT_BOX,),
+            authority="physx",
+        ),
+        # The hollow box needs its through-holes in the collision body, which
+        # boxes cannot express; the fixed mesh carries them as tets.
         Actor(
             "insert_block/box_with_holes_yellow.usd",
             f"/World/actors/{_BOX_PRIM}",
             pos=_BOX_POS,
             dynamic=False,
+            uipc_fixed_mesh="insert_block/box_with_holes_yellow_tet.npz",
+            authority="physx",
         ),
         Actor(
             "insert_block/block_blue_cube.usd",
             "/World/actors/block_blue_cube",
             pos=_BLOCK_SPECS["cube"].base_pos,
+            authority="uipc",
+            tactile_mesh="insert_block/block_blue_cube_tet.npz",
             density=_BLOCK_DENSITY,
         ),
         Actor(
             "insert_block/block_blue_half_cylinder.usd",
             "/World/actors/block_blue_half_cylinder",
             pos=_BLOCK_SPECS["half_cylinder"].base_pos,
+            authority="uipc",
+            tactile_mesh="insert_block/block_blue_half_cylinder_tet.npz",
             density=_BLOCK_DENSITY,
         ),
         Actor(
             "insert_block/block_red_hexagonal_prism.usd",
             "/World/actors/block_red_hexagonal_prism",
             pos=_BLOCK_SPECS["hexagon"].base_pos,
+            authority="uipc",
+            tactile_mesh="insert_block/block_red_hexagonal_prism_tet.npz",
             density=_BLOCK_DENSITY,
         ),
     ),

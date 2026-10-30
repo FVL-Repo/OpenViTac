@@ -87,7 +87,13 @@ TurnGearPair = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            authority="physx",
+        ),
         # Fixture, like the PD cabinet: the joint makes the base immovable without a
         # density proxy.
         Actor(
@@ -95,17 +101,20 @@ TurnGearPair = Task(
             "/World/actors/base",
             pos=_BASE_POS,
             dynamic=False,
+            authority="physx",
         ),
         Actor(
             "turn_gear_pair/gear_pair_red.usd",
             "/World/actors/red_gear",
             pos=_RED_GEAR_PICK_POS,
+            authority="physx",
         ),
         Actor(
             "turn_gear_pair/gear_pair_blue.usd",
             "/World/actors/blue_gear",
             pos=_BLUE_GEAR_POS,
             rot=_BLUE_GEAR_ROT_XYZW,
+            authority="physx",
         ),
     ),
     # Static base -> body0 falls to the world; pos is the blue gear's shaft in the

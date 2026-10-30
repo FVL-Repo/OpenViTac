@@ -64,8 +64,10 @@ class Actor:
 
     ``authority`` selects the solver that owns a dynamic actor: PhysX simulates the
     USD body directly, while ``uipc`` keeps a kinematic non-colliding PhysX proxy
-    whose pose follows the UIPC object.  ``density`` is passed to PhysX as the
-    spawned body's mass density; static and kinematic actors ignore it.
+    whose pose follows the UIPC object.  It is required: every actor states which
+    world it lives in.  ``density`` is the rigid body's mass
+    density: the PhysX body's, and the UIPC body's on the tactile path; static
+    and kinematic actors ignore it.
 
     ``uipc_fixed_boxes``/``uipc_fixed_mesh`` build a fixed UIPC collision copy for a
     static fixture; they are not a way to pin a dynamic actor.
@@ -78,15 +80,15 @@ class Actor:
 
     usd: str
     prim_path: str
+    authority: Literal["uipc", "physx"]
     pos: Vec3 = (0.0, 0.0, 0.0)
     rot: Quat = IDENTITY_XYZW
     dynamic: bool = True
-    authority: Literal["uipc", "physx"] = "physx"
     tactile_mesh: str | None = None
     uipc_fixed_boxes: tuple[tuple[Vec3, Vec3], ...] = ()
     uipc_fixed_mesh: str | None = None
     contact_object: bool = False
-    density: float | None = None  # PhysX rigid-body mass density (kg/m^3)
+    density: float | None = None  # rigid-body mass density (kg/m^3)
     constitution: Literal["abd", "fem"] = "abd"
     youngs_mpa: float | None = None  # FEM Young's modulus
     poisson: float | None = None  # FEM Poisson's ratio

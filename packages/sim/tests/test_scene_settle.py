@@ -164,7 +164,7 @@ class TactileStartTests(unittest.TestCase):
         scene._tactile_attachment_frames = cast(Any, lambda: {})
         scene._tactile_body_pad_frames = cast(Any, lambda frames: {})
         scene._tactile_object_poses = cast(Any, lambda: {})
-        scene._bind_gelpad_visuals = cast(Any, lambda: events.append("visuals"))
+        scene._bind_sensors = cast(Any, lambda: events.append("visuals"))
         return scene
 
     def test_start_tactile_is_explicit_and_idempotent(self) -> None:

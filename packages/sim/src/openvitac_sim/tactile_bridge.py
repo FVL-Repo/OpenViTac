@@ -8,7 +8,7 @@ dataclasses.  The worker is the only process that may import pyuipc.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from types import MappingProxyType
 from typing import Any, cast
 
@@ -94,7 +94,9 @@ def objects_from_actors(actors: Iterable[Actor]) -> tuple[ObjectCfg, ...]:
     tetrahedral mesh.  ``usd_path`` always carries the source actor USD for
     provenance (``None`` only when the spec declares no USD).  ``constitution``
     and the FEM-only ``youngs_mpa``/``poisson`` are forwarded unchanged; the spec
-    has already restricted ``fem`` to dynamic UIPC actors.
+    has already restricted ``fem`` to dynamic UIPC actors.  ``density`` becomes
+    the UIPC body's mass density; ``None`` keeps the 1e3 default, which equals
+    PhysX's default density.
     """
     out: list[ObjectCfg] = []
     for actor in actors:
@@ -139,6 +141,9 @@ def objects_from_actors(actors: Iterable[Actor]) -> tuple[ObjectCfg, ...]:
                 constitution=actor.constitution,
                 youngs_mpa=actor.youngs_mpa,
                 poisson=actor.poisson,
+                density_kg_m3=(
+                    actor.density if actor.density is not None else 1.0e3
+                ),
                 mesh_path=mesh_path,
                 usd_path=actor.usd or None,
                 contact_object=actor.contact_object,
@@ -376,6 +381,7 @@ class TactileBridge:
         runtime: TactileRuntime | None = None,
     ) -> None:
         self._cfg = cfg
+        self._episode_cfg = cfg
         self._run_id = run_id
         self._group_id = group_id
         self._check_uipc = check_uipc
@@ -387,6 +393,8 @@ class TactileBridge:
         self._pad_handles: dict[str, PadHandle] = {}
         self._object_handles: dict[str, ObjectHandle] = {}
         self._last_state: TactileState | None = None
+        self._staged_fingers: dict[str, npt.NDArray[np.float64]] = {}
+        self._staged_step = 0
         self._rebuild_handles()
         self._last_observation: TactileObservation | None = None
 
@@ -425,6 +433,11 @@ class TactileBridge:
     @property
     def cfg(self) -> TactileCfg:
         return self._cfg
+
+    @property
+    def episode_cfg(self) -> TactileCfg:
+        """The config this episode's reset used (``contact_object`` applied)."""
+        return self._episode_cfg
 
     @property
     def runtime(self) -> TactileRuntime | None:
@@ -530,6 +543,7 @@ class TactileBridge:
     def start(self, cfg: TactileCfg | None = None) -> None:
         if cfg is not None:
             self._cfg = cfg
+            self._episode_cfg = cfg
             self._rebuild_handles()
         if self._closed:
             raise RuntimeError("TactileBridge is closed")
@@ -554,6 +568,7 @@ class TactileBridge:
         pad_body_frames: Mapping[str, npt.NDArray[np.floating[Any]]] | None = None,
         object_poses: Mapping[str, npt.NDArray[np.floating[Any]]] | None = None,
         seed: int = 0,
+        contact_object: str | None = None,
     ) -> dict[str, Any]:
         """Send the reset handshake with the scene's actual initial frames.
 
@@ -565,7 +580,10 @@ class TactileBridge:
         pad/object must be present; there is no silent identity fallback.
 
         ``seed`` is the episode seed, forwarded to the worker reset request so
-        stochastic worker setup replays from the same episode.
+        stochastic worker setup replays from the same episode.  ``contact_object``
+        is the actor prim path of the one object whose pad contact metrics this
+        episode reports; it replaces the ``Actor.contact_object`` flags in this
+        reset's worker config only (``None`` keeps the spec's flags).
         """
         if not self._cfg.enabled:
             raise RuntimeError("TactileBridge.reset() with disabled TactileCfg")
@@ -613,13 +631,34 @@ class TactileBridge:
                     "T_world0": T_obj.reshape(-1).tolist(),
                 }
             )
+        cfg = self._cfg
+        if contact_object is not None:
+            matched = [
+                obj
+                for obj in cfg.objects
+                if obj.prim_path == contact_object and not obj.fixed
+            ]
+            if len(matched) != 1:
+                raise ValueError(
+                    f"contact_object {contact_object!r} is not exactly one "
+                    "non-fixed configured tactile object"
+                )
+            cfg = replace(
+                cfg,
+                objects=tuple(
+                    replace(obj, contact_object=(obj is matched[0]))
+                    for obj in cfg.objects
+                ),
+            )
+        self._episode_cfg = cfg
         ack = runtime.reset(
             {
                 "episode_id": self._run_id,
-                "dt_s": self._cfg.dt_s,
+                "dt_s": cfg.dt_s,
                 "seed": int(seed),
                 "pads": pads,
                 "objects": objects,
+                "config": asdict(cfg),
             }
         )
         self._pad_world_frames = world_frames
@@ -653,6 +692,39 @@ class TactileBridge:
         self._last_state = None
         self._last_observation = None
         return ack
+
+    def stage_finger(
+        self, side: str, transform: npt.NDArray[np.floating[Any]]
+    ) -> None:
+        """Stage one side's post-step finger transform for the next exchange."""
+        if side not in ("left", "right"):
+            raise ValueError(
+                f"finger side must be 'left' or 'right', got {side!r}"
+            )
+        T = np.asarray(transform, dtype=np.float64)
+        if T.shape != (4, 4):
+            raise ValueError(f"finger transform must be (4, 4), got {T.shape}")
+        self._staged_fingers[side] = T.copy()
+
+    def exchange_staged(
+        self, *, timestamp_ns: int = 0
+    ) -> TactileObservation | None:
+        """Exchange the staged left/right finger transforms as one sample."""
+        missing = {"left", "right"} - set(self._staged_fingers)
+        if missing:
+            raise RuntimeError(
+                f"finger transforms not staged for {sorted(missing)}"
+            )
+        self._staged_step += 1
+        sample = FingerSample(
+            seq=self._staged_step,
+            physx_step=self._staged_step,
+            left_T=self._staged_fingers["left"],
+            right_T=self._staged_fingers["right"],
+            timestamp_ns=timestamp_ns,
+        )
+        self._staged_fingers = {}
+        return self.exchange(sample, wait=True)
 
     def exchange(
         self, sample: FingerSample, *, wait: bool = False

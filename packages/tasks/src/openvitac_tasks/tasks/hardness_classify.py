@@ -68,26 +68,36 @@ HardnessClassify = Task(
         ),
     ),
     actors=(
-        Actor("plate.usda", "/World/plate", pos=(0.5, 0.0, 0.0), dynamic=False),
+        Actor(
+            "plate.usda",
+            "/World/plate",
+            pos=(0.5, 0.0, 0.0),
+            dynamic=False,
+            authority="physx",
+        ),
         Actor(
             "roughness_task/blue_square_plate.usd",
             "/World/actors/blue_plate",
             pos=(0.45, 0.08, 0.002),
+            authority="physx",
         ),
         Actor(
             "roughness_task/yellow_square_plate.usd",
             "/World/actors/yellow_plate",
             pos=(0.45, -0.08, 0.002),
+            authority="physx",
         ),
         Actor(
             "roughness_task/red_smooth_cuboid.usd",
             "/World/actors/hard_red_block",
             pos=(0.38, 1.0, 0.002),
+            authority="physx",
         ),
         Actor(
             "roughness_task/red_smooth_cuboid.usd",
             "/World/actors/soft_red_block",
             pos=(0.38, -1.0, 0.002),
+            authority="physx",
         ),
     ),
     instruction=(

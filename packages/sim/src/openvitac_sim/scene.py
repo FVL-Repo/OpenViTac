@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Any, Literal, cast
 
 import isaaclab.sim as sim_utils
@@ -36,18 +37,22 @@ from openvitac_spec import (
     EmbodimentSpec,
     GripperCapability,
     SceneSpec,
+    SensorBinding,
     SettleProtocol,
 )
 from openvitac_tactile.config import TactileCfg
 from openvitac_tactile.observation import TactileObservation
 from openvitac_tactile.protocol import FingerSample
-from openvitac_tactile.softworld import ObjectHandle, PadHandle
+from openvitac_tactile.softworld import ObjectHandle
 
 from .assets import asset
 from .gelpad_visual import GelpadVisual, visual_update_due
-from .optical import OpticalBackend, build_optical_backend
 from .robot import assemble_robot
-from .sensor_visual import TactileSensorVisual, make_tactile_visual
+from .sensor import Sensor, make_sensor, sensor_class, sensor_has_pad_proxy
+from .sensor.base import ContactObject, PadCameraRequest, World, WorldBuilder
+from .sensor.gsmini import BoundGsMiniSensor
+from .sensor.ids import BodyId, CameraId, Pose
+from .sensor.snapshot import DeformableState, Requires, RigidState, TickSnapshot
 from .spawn import (
     create_joint,
     disable_named_collisions,
@@ -91,17 +96,6 @@ def _ordered_body_ids(robot: Any, names: Sequence[str]) -> list[int]:
     return ids
 
 
-# The tactile camera looks through the gel.  Its near plane sits between the
-# camera-facing near sheet (~24.0 mm) and the contact/far sheet (~27.6-28.3 mm)
-# so only the contact surface is visible; head/wrist cameras are unchanged.
-TACTILE_NEAR_CLIP_M = 0.0245
-TACTILE_FAR_CLIP_M = 0.040
-
-# Only the GsMini/Neote case assets carry the display mesh, authored optical
-# camera, and ``pad_proxy`` colliders the sim-side tactile pipeline binds.
-_GELPAD_SENSOR_KINDS: frozenset[str] = frozenset({"gsmini", "neote"})
-
-
 def _unsupported_render_requests(spec: SceneSpec, tactile: TactileCfg) -> list[str]:
     """Declared tactile render streams that no sim optical backend can produce."""
     bindings = {binding.pad_key: binding for binding in spec.sensors}
@@ -110,7 +104,7 @@ def _unsupported_render_requests(spec: SceneSpec, tactile: TactileCfg) -> list[s
         if not pad.render_kinds:
             continue
         binding = bindings.get(pad.name)
-        if binding is not None and binding.sensor.kind in _GELPAD_SENSOR_KINDS:
+        if binding is not None and sensor_class(binding.sensor.kind) is not None:
             continue
         kind = "unbound" if binding is None else binding.sensor.kind
         unsupported.append(f"{pad.name} ({kind}): {list(pad.render_kinds)}")
@@ -126,26 +120,25 @@ def _require_supported_render_streams(spec: SceneSpec, tactile: TactileCfg) -> N
     unsupported = _unsupported_render_requests(spec, tactile)
     if unsupported:
         raise NotImplementedError(
-            "tactile render streams are only implemented for GsMini/Neote pads; "
-            "refusing to run with declared streams that cannot be recorded: "
-            + ", ".join(unsupported)
+            "tactile render streams have no sim-side optical pipeline for this "
+            "sensor kind; refusing to run with declared streams that cannot be "
+            "recorded: " + ", ".join(unsupported)
         )
 
 
 def _requires_pad_proxy_disabling(
     spec: SceneSpec, bridge: TactileBridge | None
 ) -> bool:
-    """Whether the UIPC path must remove the GsMini/Neote ``pad_proxy`` cubes.
+    """Whether the UIPC path must remove the sensor ``pad_proxy`` cubes.
 
-    Those cubes exist only in the GsMini/Neote case USD.  A UIPC scene with any
-    other sensor mount (e.g. the XenseWS adapters) has no ``pad_proxy`` colliders
-    to remove, so demanding one would reject a valid scene.
+    Only registered sensor kinds that declare ``pad_proxy`` carry those cubes in
+    their case USD.  A UIPC scene with any other sensor mount (e.g. the XenseWS
+    adapters) has no ``pad_proxy`` colliders to remove, so demanding one would
+    reject a valid scene.
     """
     if bridge is None:
         return False
-    if not any(
-        binding.sensor.kind in _GELPAD_SENSOR_KINDS for binding in spec.sensors
-    ):
+    if not any(sensor_has_pad_proxy(binding.sensor.kind) for binding in spec.sensors):
         return False
     return any(
         actor.dynamic and actor.authority == "uipc" for actor in spec.actors
@@ -249,26 +242,6 @@ def _camera_cfg(spec: CameraSpec, update_period: float) -> CameraCfg:
     )
 
 
-def _depth_camera_cfg(spec: DepthCameraCfg, update_period: float) -> CameraCfg:
-    """Reuse an authored tactile camera and request a finite depth annotation."""
-    return CameraCfg(
-        prim_path=spec.prim_path,
-        update_period=update_period,
-        height=spec.height,
-        width=spec.width,
-        # Ask for RGB too: Isaac's RTX renderer sets the process-wide
-        # ``/rtx/sdg/force/disableColorRender`` flag when a render product has
-        # no color output, which would black out the task cameras. The extra
-        # color buffer is unused; the depth array is read by its own key.
-        data_types=["rgb", spec.data_type],
-        spawn=None,
-        update_latest_camera_pose=True,
-        # Authored clipping stays in the USD; missed rays are filled with the
-        # far clip in _read_tactile_depth so the recorded map stays finite.
-        depth_clipping_behavior="none",
-    )
-
-
 def _camera_matrix(spec: DepthCameraCfg) -> npt.NDArray[np.float64]:
     """Pinhole pixel intrinsics from the authored USD camera calibration."""
     fx = spec.focal_length / spec.horizontal_aperture * spec.width
@@ -322,6 +295,15 @@ class SceneObservation:
     joint_vel: npt.NDArray[np.floating]
     action: npt.NDArray[np.floating]  # joint-position target, joint_pos column order
     tactile: TactileObservation | None = None
+    # Exactly the poses the imaging pass consumed this frame, so a recording
+    # can replay the renderer offline bit-for-bit: pad side -> world <- camera,
+    # contact object name -> world <- object.
+    tactile_cameras: Mapping[str, npt.NDArray[np.float64]] = field(
+        default_factory=dict
+    )
+    tactile_objects: Mapping[str, npt.NDArray[np.float64]] = field(
+        default_factory=dict
+    )
     # 0-based index of the physics step that produced this frame. Timestamps are
     # this index * sim_dt, not the recorded-frame number * sim_dt: at the default
     # every=2 the two differ by the recording cadence.
@@ -362,6 +344,246 @@ def _max_pose_delta(
     return max_pos, max_rot
 
 
+class _SensorWorld:
+    """Bind-time world access for a scene's gelpad sensors."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        bindings: Mapping[str, SensorBinding],
+        body_frames: Mapping[str, npt.NDArray[np.float64]],
+    ) -> None:
+        self._scene = scene
+        self._bindings = bindings
+        self._body_frames = body_frames
+        self._camera_local: dict[str, npt.NDArray[np.float64]] = {}
+
+    def _bridge(self) -> TactileBridge:
+        bridge = self._scene._tactile_bridge
+        if bridge is None:
+            raise RuntimeError("tactile bridge is not started")
+        return bridge
+
+    def _pad(self, body: BodyId) -> Any:
+        bridge = self._bridge()
+        return bridge.pad_config(bridge.pad_handles[str(body)])
+
+    def _camera_prim_path(self, body: BodyId, pad: Any) -> str:
+        camera_prim = self._bindings[str(body)].mount.camera_prim
+        if camera_prim is not None:
+            return camera_prim
+        return f"{pad.frame.body_prim_path}/Camera"
+
+    def pad_surface(
+        self, body: BodyId
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.int32]]:
+        bridge = self._bridge()
+        surface = bridge.pad_surface(bridge.pad_handles[str(body)])
+        return surface.rest_vertices, surface.triangles
+
+    def rest_camera_pose(self, body: BodyId) -> npt.NDArray[np.float64]:
+        camera_local = self._camera_local.get(body)
+        if camera_local is None:
+            pad = self._pad(body)
+            # The USD body/camera pair is authored in the default robot pose;
+            # compose its fixed relative transform with the actual PhysX body
+            # pose.  The CameraData.pose is still the authored pose before the
+            # first stepped render, so it cannot be used here.
+            body_usd = _prim_world_transform(pad.frame.body_prim_path)
+            camera_usd = _prim_world_transform(
+                self._camera_prim_path(body, pad)
+            )
+            camera_local = np.linalg.inv(body_usd) @ camera_usd
+            self._camera_local[body] = camera_local
+            self._scene._aperture_camera_local[pad.side] = camera_local
+            self._scene._aperture_pads[pad.side] = pad
+        return self._body_frames[str(body)] @ camera_local
+
+    def pad_frame(self, body: BodyId) -> npt.NDArray[np.float64]:
+        """World <- pad calibration frame of the gelpad at the bind instant."""
+        bridge = self._bridge()
+        return bridge.pad_world_frames[str(body)]
+
+    def camera_intrinsics(self, body: BodyId) -> npt.NDArray[np.float64]:
+        pad = self._pad(body)
+        width, height = pad.image_width, pad.image_height
+        if width is None or height is None:
+            raise RuntimeError(f"rendering pad {str(body)!r} has no image size")
+        camera_spec = self._scene._authored_depth_cfg(
+            self._camera_prim_path(body, pad), width, height
+        )
+        return _camera_matrix(camera_spec)
+
+
+class _SceneProxy:
+    """Cosmetic gelpad display mesh owned by one bound sensor."""
+
+    def __init__(self, scene: Scene, prim_path: str, stage: Any) -> None:
+        self._scene = scene
+        self._prim_path = prim_path
+        self._stage = stage
+        self._visual: GelpadVisual | None = None
+
+    def update(
+        self, vertices: npt.NDArray[Any], triangles: npt.NDArray[Any]
+    ) -> None:
+        """Bind on the first call, then publish only on due render frames."""
+        if self._visual is None:
+            self._visual = GelpadVisual.bind(
+                side=self._prim_path,
+                gelpad_prim_path=self._prim_path,
+                rest_vertices=vertices,
+                triangles=triangles,
+                stage=self._stage,
+            )
+            self._scene._visual_changed = True
+            return
+        if not self._scene._visual_due:
+            return
+        self._visual.update(vertices)
+        self._scene._visual_changed = True
+
+
+class _SceneSoftBody:
+    """One bridge pad exposed as the sensor-owned soft body."""
+
+    def __init__(self, bridge: TactileBridge, pad_key: str) -> None:
+        self._bridge = bridge
+        self._pad_key = pad_key
+
+    @property
+    def id(self) -> BodyId:
+        return BodyId(self._pad_key)
+
+    def stage(self, pose: Pose) -> None:
+        self._bridge.stage_finger(self._pad_key, pose.matrix)
+
+
+class _SceneBuilder:
+    """The narrow build API the scene hands to each sensor's ``attach``."""
+
+    def __init__(self, scene: Scene) -> None:
+        self._scene = scene
+        self._pad_proxy_disabled = False
+
+    def body(self, name: str) -> BodyId | None:
+        # Articulation data is not initialized before reset, so resolve against
+        # the authored sensor mounts; PhysX resolves the index after reset.
+        if any(
+            binding.body_name == name for binding in self._scene._spec.sensors
+        ):
+            return BodyId(name)
+        return None
+
+    def add_soft_body(self, pad_key: str) -> _SceneSoftBody:
+        bridge = self._scene._tactile_bridge
+        if bridge is None:
+            raise RuntimeError("tactile bridge is not configured")
+        if pad_key not in bridge.pad_handles:
+            raise RuntimeError(
+                f"tactile pad {pad_key!r} is not in the bridge config"
+            )
+        return _SceneSoftBody(bridge, pad_key)
+
+    def add_pad_camera(
+        self, prim_path: str, spec: PadCameraRequest
+    ) -> CameraId:
+        """Register the authored pad camera's calibration; spawn nothing.
+
+        The sensor consumes its intrinsics and its fixed pose relative to the
+        pad.  There is no depth render product: the recorded depth stream is
+        analytic object depth, and the rest reference is a geometric plane.
+        """
+        stage = sim_utils.get_current_stage()
+        prim = stage.GetPrimAtPath(prim_path)
+        if not prim.IsValid() or not prim.IsA(UsdGeom.Camera):
+            raise RuntimeError(f"missing authored pad camera {prim_path!r}")
+        self._scene._tactile_depth_specs[spec.side] = (
+            self._scene._authored_depth_cfg(prim_path, spec.width, spec.height)
+        )
+        return CameraId(spec.side)
+
+    def contact_objects(self) -> tuple[ContactObject, ...]:
+        """Dynamic scene actors, resolved structurally from the spec.
+
+        ``Actor.dynamic`` is the declaration: a dynamic actor is a thing the
+        gripper manipulates, so it may touch a pad; a static actor is a support
+        or fixture and is never imaged.  No name or label is inspected.
+        Sensor-owned prims are rejected structurally: the gelpad/case is the
+        sensor, never an object.
+        """
+        spec = self._scene._spec
+        owned = [
+            prim
+            for binding in spec.sensors
+            for prim in (
+                binding.body_prim_path,
+                binding.case_prim_path,
+                binding.gelpad_prim_path,
+            )
+        ]
+        objects: list[ContactObject] = []
+        seen: set[str] = set()
+        for actor in spec.actors:
+            if not actor.dynamic:
+                continue
+            if actor.constitution == "fem":
+                raise NotImplementedError(
+                    f"contact object {actor.prim_path!r} is FEM-deformable; the "
+                    "tactile exchange carries no live object surface, so imaging "
+                    "would silently use its rest mesh instead of its deformed one"
+                )
+            for prim in owned:
+                if actor.prim_path == prim or actor.prim_path.startswith(f"{prim}/"):
+                    raise RuntimeError(
+                        f"actor {actor.prim_path!r} is part of sensor {prim!r}; a "
+                        "sensor's own geometry is never a contact object"
+                    )
+            name = actor.prim_path.rsplit("/", 1)[-1]
+            if name in seen:
+                raise RuntimeError(f"duplicate contact object name {name!r}")
+            seen.add(name)
+            objects.append(
+                ContactObject(
+                    id=BodyId(name),
+                    prim_path=actor.prim_path,
+                    usd_path=asset(actor.usd),
+                )
+            )
+        return tuple(objects)
+
+    def add_visual_proxy(self, prim_path: str) -> _SceneProxy:
+        return _SceneProxy(
+            self._scene, prim_path, sim_utils.get_current_stage()
+        )
+
+    def remove_pad_proxy(self, body: BodyId) -> None:
+        """Remove authored ``pad_proxy`` colliders on a UIPC-authored scene."""
+        if self._pad_proxy_disabled:
+            return
+        spec = self._scene._spec
+        if not _requires_pad_proxy_disabling(
+            spec, self._scene._tactile_bridge
+        ):
+            return
+        disabled = disable_named_collisions(spec.robot_prim_path, "pad_proxy")
+        self._pad_proxy_disabled = True
+        if disabled == 0:
+            raise RuntimeError(
+                "UIPC scene with GsMini/Neote pads found no pad_proxy "
+                "colliders under the robot root"
+            )
+
+    def frames(self) -> Mapping[str, Pose]:
+        frames: dict[str, Pose] = {}
+        bridge = self._scene._tactile_bridge
+        if bridge is None:
+            return frames
+        for name, frame in bridge.pad_world_frames.items():
+            frames[name] = Pose(frame)
+        return frames
+
+
 class Scene:
     """Assembles a scene from a spec and drives its fixed lifecycle.
 
@@ -374,6 +596,9 @@ class Scene:
     Episode order: ``reset -> settle -> start_tactile -> step``.  Tactile t0 is
     the settle-end state, so pre-rollout steps do not send finger samples.
     """
+
+    # Partially constructed scenes (tests built via __new__) have no requirements.
+    _sensor_requires: Requires = Requires()
 
     def __init__(
         self,
@@ -422,19 +647,24 @@ class Scene:
         self._tactile_started = False
         self._tactile_state: TactileObservation | None = None
         self._tactile_depth_specs: dict[str, DepthCameraCfg] = {}
-        self._tactile_depth_cameras: dict[str, Camera] = {}
-        self._tactile_depth_record_sides: set[str] = set()
-        self._tactile_rest_depth: dict[str, npt.NDArray[np.float32]] = {}
-        self._tactile_live_depth: dict[str, npt.NDArray[np.float32]] = {}
-        self._tactile_visuals: dict[str, TactileSensorVisual] = {}
-        self._tactile_marker_sides: set[str] = set()
-        self._gelpad_visuals: dict[PadHandle, GelpadVisual] = {}
-        self._optical_backends: dict[str, OpticalBackend] = {}
+        self._tactile_depth_record_sides: set[str] = {
+            binding.pad_key
+            for binding in spec.sensors
+            if "depth" in binding.streams
+        }
+        self._tactile_sensors: dict[str, BoundGsMiniSensor] = {}
+        self._attached_sensors: dict[str, Sensor] = {}
+        self._contact_object_paths: dict[str, str] = {}
+        self._tactile_camera_frames: dict[str, npt.NDArray[np.float64]] = {}
+        self._tactile_height_maps: dict[str, npt.NDArray[np.float64]] = {}
+        self._tactile_frame_cameras: dict[str, npt.NDArray[np.float64]] = {}
+        self._tactile_frame_objects: dict[str, npt.NDArray[np.float64]] = {}
+        self._visual_due = False
+        self._visual_changed = False
         self._optical_backend = optical_backend
         self._taxim_device = taxim_device
         self._aperture_camera_local: dict[str, npt.NDArray[np.float64]] = {}
         self._aperture_pads: dict[str, Any] = {}
-        self._aperture_masks: dict[str, npt.NDArray[np.bool_]] = {}
         self._body_index_cache: dict[tuple[str, ...], list[int]] = {}
         if tactile is not None and tactile.enabled:
             self._tactile_bridge = TactileBridge(
@@ -456,13 +686,6 @@ class Scene:
             # tool axis.  They are sensor mounts, not jaw geometry, and on a plain
             # grasp they sweep a standing object aside before the pads can close.
             disable_named_collisions(spec.robot_prim_path, prefix="xense")
-        if _requires_pad_proxy_disabling(spec, self._tactile_bridge):
-            disabled = disable_named_collisions(spec.robot_prim_path, "pad_proxy")
-            if disabled == 0:
-                raise RuntimeError(
-                    "UIPC scene with GsMini/Neote pads found no pad_proxy "
-                    "colliders under the robot root"
-                )
         for actor in spec.actors:
             if not actor.dynamic:
                 if actor.authority != "physx":
@@ -489,7 +712,7 @@ class Scene:
             cam_cfg = _camera_cfg(cam_spec, self._dt)
             self._cameras[cam_cfg.prim_path] = spawn_camera(cam_cfg)
         if tactile is not None and tactile.enabled:
-            self._build_tactile_depth_cameras(tactile)
+            self._build_tactile_sensors()
         # PhysX contact reporting on the gripper's finger pad bodies (the robot spawns
         # with activate_contact_sensors); feeds the shared gripper_contact query.
         # The stub marks the base class abstract; the factory __new__ dispatches to
@@ -503,68 +726,42 @@ class Scene:
             )
         )
 
-    def _build_tactile_depth_cameras(self, tactile: TactileCfg) -> None:
-        """Bind each pad that records depth or needs camera depth for optics."""
-        has_gsmini = any(
-            binding.sensor.kind in ("gsmini", "neote")
-            for binding in self._spec.sensors
-        )
-        if not has_gsmini:
-            if any(
-                kind in pad.render_kinds
-                for pad in tactile.pads
-                for kind in ("depth", "marker_rgb")
-            ):
-                raise ValueError(
-                    "tactile depth/marker rendering is only implemented for "
-                    "GsMini pads"
-                )
+    def _build_tactile_sensors(self) -> None:
+        """Construct and attach each registered sensor before the scene resets."""
+        self._attached_sensors = {}
+        self._sensor_requires = Requires()
+        bridge = self._tactile_bridge
+        if bridge is None:
             return
-        bindings = {binding.pad_key: binding for binding in self._spec.sensors}
-        for pad in tactile.pads:
-            wants_rgb = "rgb" in pad.render_kinds
-            wants_depth = "depth" in pad.render_kinds
-            wants_marker = "marker_rgb" in pad.render_kinds
-            # Taxim consumes the camera depth for legacy parity, and marker_rgb
-            # is derived from its Taxim RGB.  Procedural marker rendering uses
-            # the live mesh directly, so it must not spawn an unused product.
-            needs_optical_depth = (
-                self._optical_backend == "taxim" and (wants_rgb or wants_marker)
+        registered = [
+            binding
+            for binding in self._spec.sensors
+            if sensor_class(binding.sensor.kind) is not None
+        ]
+        if not registered:
+            return
+        contact = list(self._arm.embodiment.gripper.contact_bodies)
+        if len(contact) != 2:
+            raise RuntimeError(
+                f"expected 2 tactile attachment bodies, got {contact}"
             )
-            if not wants_depth and not needs_optical_depth:
-                continue
-            if pad.image_width is None or pad.image_height is None:
-                raise ValueError(
-                    f"pad {pad.name!r} requests rendering but has no image size"
-                )
-            binding = bindings.get(pad.name)
-            prim_path = (
-                binding.mount.camera_prim
-                if binding is not None and binding.mount.camera_prim is not None
-                else f"{pad.frame.body_prim_path}/Camera"
+        finger_by_side = {"left": contact[0], "right": contact[1]}
+        builder: WorldBuilder = _SceneBuilder(self)
+        objects = builder.contact_objects()
+        self._contact_object_paths = {str(obj.id): obj.prim_path for obj in objects}
+        self._tactile_camera_frames = {}
+        for binding in registered:
+            sensor = make_sensor(
+                binding.sensor.kind,
+                binding=binding,
+                pad_key=binding.pad_key,
+                optical_backend=self._optical_backend,
+                taxim_device=self._taxim_device,
+                finger_body=finger_by_side.get(binding.pad_key),
             )
-            stage = sim_utils.get_current_stage()
-            camera_prim = stage.GetPrimAtPath(prim_path)
-            if not camera_prim.IsValid() or not camera_prim.IsA(UsdGeom.Camera):
-                raise RuntimeError(f"missing authored depth camera {prim_path!r}")
-            camera_prim.GetAttribute("clippingRange").Set(
-                Gf.Vec2f(TACTILE_NEAR_CLIP_M, TACTILE_FAR_CLIP_M)
-            )
-            camera_spec = self._authored_depth_cfg(
-                prim_path, pad.image_width, pad.image_height
-            )
-            camera_spec = replace(
-                camera_spec,
-                clipping_range=(TACTILE_NEAR_CLIP_M, TACTILE_FAR_CLIP_M),
-            )
-            if wants_marker:
-                self._tactile_marker_sides.add(pad.side)
-            if wants_depth:
-                self._tactile_depth_record_sides.add(pad.side)
-            self._tactile_depth_specs[pad.side] = camera_spec
-            self._tactile_depth_cameras[pad.side] = spawn_camera(
-                _depth_camera_cfg(camera_spec, self._dt)
-            )
+            sensor.attach(builder)
+            self._attached_sensors[binding.pad_key] = sensor
+            self._sensor_requires = self._sensor_requires | sensor.requires()
 
     @staticmethod
     def _authored_depth_cfg(
@@ -600,6 +797,12 @@ class Scene:
         )
 
     @property
+    def tactile_episode_cfg(self) -> TactileCfg | None:
+        """The tactile config of the latest reset (per-episode contact object)."""
+        bridge = self._tactile_bridge
+        return bridge.episode_cfg if bridge is not None else None
+
+    @property
     def tactile_depth_specs(self) -> Mapping[str, DepthCameraCfg]:
         """Pad side -> authored depth calibration for pads recording depth.
 
@@ -618,6 +821,14 @@ class Scene:
         if bridge is None:
             return {}
         return bridge.pad_world_frames
+
+    def tactile_camera_frames(self) -> Mapping[str, npt.NDArray[np.float64]]:
+        """Pad side -> camera <- pad calibration used by the imaging pass."""
+        return MappingProxyType(self._tactile_camera_frames)
+
+    def tactile_height_maps(self) -> Mapping[str, npt.NDArray[np.float64]]:
+        """Pad side -> the latest tick's contact height map, in millimetres."""
+        return MappingProxyType(self._tactile_height_maps)
 
     def tactile_pad_surfaces(self) -> Mapping[str, PadSurface]:
         """Pad name -> worker rest surface (world-space, frame-vertex order)."""
@@ -711,8 +922,13 @@ class Scene:
         # read before the first step() sees it, not the USD-authored defaults.
         self._update_actors()
 
-    def start_tactile(self) -> None:
+    def start_tactile(self, *, contact_object: str | None = None) -> None:
         """Start the tactile worker and capture its t0 reference.
+
+        ``contact_object`` is the actor prim path of the object whose pad contact
+        metrics this episode reports; it overrides ``Actor.contact_object`` for
+        this reset only, so a task with several UIPC objects can pick one per
+        episode.
 
         Must run after :meth:`reset` and :meth:`settle`: DR and pre-rollout
         physics must finish first so the reference frames and object poses are
@@ -736,17 +952,13 @@ class Scene:
             pad_body_frames=self._tactile_body_pad_frames(body_frames),
             object_poses=self._tactile_object_poses(),
             seed=self._episode_seed,
+            contact_object=contact_object,
         )
         self._uipc_object_handles = {
             name: self._tactile_bridge.object_handle(name)
             for name in self._uipc_proxies
         }
-        self._bind_gelpad_visuals()
-        # Capture the no-contact far-sheet rest depth before the rollout clock
-        # starts.  Taxim's height map is rest-minus-live, so it must never be
-        # reconstructed from a hard-coded calibration or from an object-depth
-        # fallback.
-        self._capture_tactile_rest_depth()
+        self._bind_sensors()
         # Tactile t0 is this instant: start its own sequence at 0 so the first
         # rollout finger sample is seq/physx_step 1 rather than jumping ahead
         # by the pre-tactile settle steps.  There was no tactile state before,
@@ -805,134 +1017,19 @@ class Scene:
             out[obj.name] = body_pose_to_T(np.asarray([*pos, *quat], dtype=np.float64))
         return out
 
-    def _bind_gelpad_visuals(self) -> None:
-        """Rewrite the GsMini display meshes to the worker's rest surfaces."""
-        self._gelpad_visuals = {}
-        self._optical_backends = {}
+    def _bind_sensors(self) -> None:
+        """Bind every attached sensor against this episode's rest state."""
+        self._tactile_sensors = {}
         bridge = self._tactile_bridge
         if bridge is None:
             return
-        unsupported = _unsupported_render_requests(self._spec, bridge.cfg)
-        if unsupported:
-            raise NotImplementedError(
-                "tactile render streams are only implemented for GsMini/Neote "
-                "pads; refusing to drop declared streams for "
-                + ", ".join(unsupported)
-            )
-        stage = sim_utils.get_current_stage()
         body_frames = self._tactile_attachment_frames()
         bindings = {binding.pad_key: binding for binding in self._spec.sensors}
-        visuals: dict[PadHandle, GelpadVisual] = {}
-        for handle in bridge.pad_handles.values():
-            surface = bridge.pad_surface(handle)
-            pad = bridge.pad_config(handle)
-            wants_rgb = "rgb" in pad.render_kinds
-            wants_marker = handle.side in self._tactile_marker_sides
-            binding = bindings.get(pad.name)
-            if binding is None:
-                raise RuntimeError(f"missing sensor binding for pad {pad.name!r}")
-            if binding.sensor.kind not in _GELPAD_SENSOR_KINDS:
-                # No authored display mesh or optical camera on this mount.
-                continue
-            if wants_rgb or wants_marker:
-                if pad.image_width is None or pad.image_height is None:
-                    raise RuntimeError(
-                        f"rendering pad {handle.side!r} has no image size"
-                    )
-                camera_prim_path = (
-                    binding.mount.camera_prim
-                    if binding.mount.camera_prim is not None
-                    else f"{pad.frame.body_prim_path}/Camera"
-                )
-                # The USD body/camera pair is authored in the default robot
-                # pose; compose its fixed relative transform with the actual
-                # PhysX body pose.  The CameraData.pose is still the authored
-                # pose before the first stepped render, so it cannot be used
-                # here.
-                body_usd = _prim_world_transform(pad.frame.body_prim_path)
-                camera_usd = _prim_world_transform(camera_prim_path)
-                body_camera = np.linalg.inv(body_usd) @ camera_usd
-                camera_pose = body_frames[pad.name] @ body_camera
-                self._aperture_camera_local[pad.side] = body_camera
-                self._aperture_pads[pad.side] = pad
-                camera_spec = self._authored_depth_cfg(
-                    camera_prim_path, pad.image_width, pad.image_height
-                )
-                camera_intrinsics = _camera_matrix(camera_spec)
-                image_size = (pad.image_width, pad.image_height)
-                visual = make_tactile_visual(
-                    side=pad.side,
-                    rest_vertices=surface.rest_vertices,
-                    triangles=surface.triangles,
-                    camera_pose=camera_pose,
-                    camera_intrinsics=camera_intrinsics,
-                    image_size=image_size,
-                    marker_rows=pad.marker_rows or 7,
-                    marker_cols=pad.marker_cols or 9,
-                )
-                self._tactile_visuals[pad.side] = visual
-                self._optical_backends[pad.side] = build_optical_backend(
-                    backend=self._optical_backend,
-                    side=pad.side,
-                    kind=binding.sensor.kind,
-                    rest_vertices=surface.rest_vertices,
-                    triangles=surface.triangles,
-                    camera_pose=camera_pose,
-                    camera_intrinsics=camera_intrinsics,
-                    image_size=image_size,
-                    marker_rows=pad.marker_rows or 7,
-                    marker_cols=pad.marker_cols or 9,
-                    device=self._taxim_device,
-                    visual=visual,
-                )
-            visuals[handle] = GelpadVisual.bind(
-                side=handle.side,
-                gelpad_prim_path=pad.gelpad_prim_path,
-                rest_vertices=surface.rest_vertices,
-                triangles=surface.triangles,
-                stage=stage,
-            )
-        self._gelpad_visuals = visuals
-
-    def _marker_camera_pose(self, side: str) -> npt.NDArray[np.float64]:
-        """Current world <- marker-camera transform for one pad."""
-        pad = self._aperture_pads[side]
-        camera_local = self._aperture_camera_local[side]
-        body_frames = self._tactile_attachment_frames()
-        return body_frames[pad.name] @ camera_local
-
-    def _marker_aperture_mask(
-        self, side: str, image_size: tuple[int, int]
-    ) -> npt.NDArray[np.bool_] | None:
-        """Fixed rest aperture shared by the depth and optical passes."""
-        cached = self._aperture_masks.get(side)
-        if cached is not None and cached.shape == (image_size[1], image_size[0]):
-            return cached
-        backend = self._optical_backends.get(side)
-        if backend is None:
-            return None
-        mask = backend.aperture_mask()
-        self._aperture_masks[side] = mask
-        return mask
-
-    def _update_gelpad_visuals(self) -> bool:
-        """Publish the latest UIPC pad surface into the display meshes."""
-        bridge = self._tactile_bridge
-        if bridge is None:
-            return False
-        updated = False
-        for handle, visual in self._gelpad_visuals.items():
-            pad = bridge.read_pad(handle)
-            if pad.n_vertices == 0:
-                continue
-            if pad.n_vertices != visual.n_vertices:
-                raise RuntimeError(
-                    f"gelpad {handle.side!r} vertex count {pad.n_vertices} does "
-                    f"not match the reset surface {visual.n_vertices}"
-                )
-            visual.update(pad.vertices)
-            updated = True
-        return updated
+        for side, sensor in sorted(self._attached_sensors.items()):
+            world: World = _SensorWorld(self, bindings, body_frames)
+            bound = cast(BoundGsMiniSensor, sensor.bind(world))
+            self._tactile_sensors[side] = bound
+            self._tactile_camera_frames[side] = bound.visual.camera_from_pad
 
     def _run_settle(self, settle: SettleProtocol) -> None:
         # TODO(tactile-stack): early-exit on marker-reference stability once the tactile
@@ -1097,19 +1194,47 @@ class Scene:
         # remaining assets refresh after the proxy sync below.
         self._arm.robot.update(self._dt)
         self._physics_steps_total += 1
-        finger_sample = self._make_finger_sample()
-        visual_updated = False
+        body_names, body_rows = self._read_body_rows()
+        if self._sensor_requires.objects:
+            self._refresh_physx_objects()
+        self._visual_changed = False
+        published: TickSnapshot | None = None
         if self._tactile_bridge is not None and self._tactile_started:
-            self._tactile_state = self._tactile_bridge.exchange(
-                finger_sample, wait=True
+            # The pre-exchange snapshot only stages finger poses; object poses
+            # do not exist until this tick's exchange lands.
+            sync_snapshot = self._build_tick_snapshot(
+                body_names,
+                body_rows,
+                step_index=self._steps_taken,
+                include_objects=False,
             )
+            for side in sorted(self._tactile_sensors):
+                self._tactile_sensors[side].sync(sync_snapshot)
+            # Pads without a sim-side sensor still need a finger transform so
+            # the worker sees the complete pair.
+            missing = {"left", "right"} - set(self._tactile_sensors)
+            if missing:
+                sample = self._make_finger_sample(body_names, body_rows)
+                for side, transform in (
+                    ("left", sample.left_T),
+                    ("right", sample.right_T),
+                ):
+                    if side in missing:
+                        self._tactile_bridge.stage_finger(side, transform)
+            self._tactile_state = self._tactile_bridge.exchange_staged()
             if self._tactile_state is not None:
                 self._sync_uipc_proxies()
-            if record_frame and self._tactile_state is not None:
-                visual_updated = self._update_gelpad_visuals()
+                self._visual_due = record_frame
+                published = self._build_tick_snapshot(
+                    body_names, body_rows, step_index=self._steps_taken
+                )
+                for side in sorted(self._tactile_sensors):
+                    self._tactile_sensors[side].publish(published)
+            else:
+                self._visual_due = False
             if (
                 self._uipc_proxies and self._tactile_state is not None
-            ) or visual_updated:
+            ) or self._visual_changed:
                 # sim.step rendered the previous proxy pose; render the UIPC pose
                 # (and the refreshed gelpad mesh) before the cameras read.
                 self._sim.render()
@@ -1118,19 +1243,8 @@ class Scene:
         # a stale snapshot.
         self._update_actors()
         self._update_cameras()
-        self._aperture_masks = {}
-        if self._tactile_state is not None and self._tactile_depth_cameras:
-            self._tactile_state = replace(
-                self._tactile_state,
-                tactile_depth=self._read_tactile_depth(),
-            )
-        if self._tactile_state is not None and self._optical_backends:
-            tactile_rgb, marker_rgb = self._read_tactile_images()
-            self._tactile_state = replace(
-                self._tactile_state,
-                tactile_rgb=tactile_rgb,
-                tactile_marker_rgb=marker_rgb,
-            )
+        if published is not None and self._tactile_sensors:
+            self._observe_tactile_sensors(published)
         # Stamp the 0-based index of the step just completed; the sink receives
         # that index (via read()) so v3 timestamps use physics time.
         self._last_step_index = self._steps_taken
@@ -1154,21 +1268,40 @@ class Scene:
                 )
             sync_kinematic_proxy(proxy, obj.pose_xyzw, device=self._sim.device)
 
-    def _make_finger_sample(self) -> FingerSample:
-        """PhysX post-step finger transforms for the tactile worker."""
-        names = list(self._arm.embodiment.gripper.contact_bodies)
-        if len(names) != 2:
-            raise RuntimeError(f"expected 2 tactile attachment bodies, got {names}")
+    def _required_body_names(self) -> list[str]:
+        """Gripper contact bodies plus every body a bound sensor requires."""
+        names = set(self._arm.embodiment.gripper.contact_bodies)
+        names.update(str(body) for body in self._sensor_requires.bodies)
+        return sorted(names)
+
+    def _read_body_rows(self) -> tuple[list[str], npt.NDArray[np.float64]]:
+        """One batched PhysX pose read for every body this tick needs."""
+        names = self._required_body_names()
         ids = self._body_ids(names)
-        poses = cast(
+        rows = cast(
             npt.NDArray[np.float64],
             self._arm.robot.data.body_pose_w.torch[0, ids].cpu().numpy(),
         )
-        pose_by_name = {name: poses[index] for index, name in enumerate(names)}
+        return names, rows
+
+    def _make_finger_sample(
+        self,
+        body_names: Sequence[str] | None = None,
+        body_rows: npt.NDArray[np.float64] | None = None,
+    ) -> FingerSample:
+        """PhysX post-step finger transforms for the tactile worker."""
+        if body_names is None or body_rows is None:
+            body_names, body_rows = self._read_body_rows()
+        contact = list(self._arm.embodiment.gripper.contact_bodies)
+        if len(contact) != 2:
+            raise RuntimeError(f"expected 2 tactile attachment bodies, got {contact}")
+        rows_by_name = {
+            name: body_rows[index] for index, name in enumerate(body_names)
+        }
         step = self._physics_steps_total
         return finger_sample_from_body_poses(
-            pose_by_name[names[0]],
-            pose_by_name[names[1]],
+            rows_by_name[contact[0]],
+            rows_by_name[contact[1]],
             seq=step,
             physx_step=step,
         )
@@ -1199,6 +1332,8 @@ class Scene:
             joint_vel=joint_vel,
             action=action,
             tactile=self._tactile_state,
+            tactile_cameras=self._tactile_frame_cameras,
+            tactile_objects=self._tactile_frame_objects,
             physics_step=self._last_step_index,
         )
 
@@ -1322,190 +1457,143 @@ class Scene:
             actor.update(self._dt)
         self._contact.update(dt=self._dt)
 
-    def _read_tactile_depth_image(
-        self, side: str, camera: Camera
-    ) -> npt.NDArray[np.float32]:
-        """Read one finite camera-depth image in metres, shape (H, W)."""
-        spec = self._tactile_depth_specs[side]
-        output = camera.data.output
-        if output is None:
-            raise RuntimeError(f"depth camera {side!r} has not rendered")
-        raw = output.get(spec.data_type)
-        if raw is None:
-            raise RuntimeError(
-                f"depth camera {side!r} did not produce {spec.data_type!r}"
-            )
-        depth = np.asarray(raw.torch[0].cpu().numpy(), dtype=np.float32)
-        if depth.ndim == 3:
-            if depth.shape[-1] != 1:
-                raise RuntimeError(
-                    f"depth camera {side!r} returned {depth.shape}, "
-                    "expected one channel"
-                )
-            depth = depth[..., 0]
-        if depth.shape != (spec.height, spec.width):
-            raise RuntimeError(
-                f"depth camera {side!r} returned {depth.shape}, expected "
-                f"{(spec.height, spec.width)}"
-            )
-        if not np.isfinite(depth).all():
-            # "none" clipping leaves inf/NaN for rays that miss geometry;
-            # clamp them to the authored far plane so contact metrics and the
-            # HDF5 writer see a finite metric map.
-            depth = np.where(
-                np.isfinite(depth), depth, spec.clipping_range[1]
-            ).astype(np.float32)
-        return depth
-
-    def _capture_tactile_rest_depth(self) -> None:
-        """Capture the actual no-contact gel far-surface depth at t0.
-
-        The camera annotation is used to validate that the near sheet is gone;
-        the stored baseline is the far-sheet rest raster, so it has exactly the
-        same geometry source as the live gel depth and is not an object image.
-        If the camera still sees the near sheet, or sees only the far clip, fail
-        explicitly instead of silently falling back to object depth.
-        """
-        depth_cameras = getattr(self, "_tactile_depth_cameras", {})
-        if not depth_cameras:
-            return
-        self._sim.render()
-        rest: dict[str, npt.NDArray[np.float32]] = {}
-        for side, camera in depth_cameras.items():
-            camera.update(dt=self._dt, force_recompute=True)
-            depth = self._read_tactile_depth_image(side, camera)
-            mask = self._marker_aperture_mask(
-                side, (int(depth.shape[1]), int(depth.shape[0]))
-            )
-            valid = np.isfinite(depth) & (depth > 0.0)
-            if mask is not None:
-                valid &= mask
-            if not valid.any():
-                raise RuntimeError(
-                    f"tactile depth camera {side!r} has no valid rest gel pixels; "
-                    "cannot capture a rest-depth baseline"
-                )
-            rest_min = float(depth[valid].min())
-            if rest_min < TACTILE_NEAR_CLIP_M - 1e-3:
-                raise RuntimeError(
-                    f"tactile depth camera {side!r} still sees the near gel sheet "
-                    f"({rest_min * 1000:.3f} mm < near clip); refusing to use "
-                    "object depth as the Taxim input"
-                )
-            if rest_min >= TACTILE_FAR_CLIP_M:
-                raise RuntimeError(
-                    f"tactile depth camera {side!r} sees no gel surface at rest "
-                    f"({rest_min * 1000:.3f} mm >= far clip); cannot capture a "
-                    "rest-depth baseline"
-                )
-            visual = self._tactile_visuals.get(side)
-            if visual is None:
-                raise RuntimeError(
-                    f"tactile pad {side!r} has no far-sheet visual for the "
-                    "rest-depth baseline"
-                )
-            rest[side] = np.asarray(visual.rest_depth, dtype=np.float32)
-        self._tactile_rest_depth = rest
-
     def _update_cameras(self) -> None:
-        # The visual gel stays visible for every camera.  The tactile depth
-        # camera relies on its near clip to remove the near sheet, so there is
-        # no global visibility toggle and no hide/restore render ordering.
         for camera in self._cameras.values():
             camera.update(dt=self._dt)
-        for camera in self._tactile_depth_cameras.values():
-            camera.update(dt=self._dt, force_recompute=True)
 
-    def _read_tactile_depth(self) -> dict[str, npt.NDArray[np.float32]]:
-        """Metric gel far-surface depth maps, (H, W) float32 metres.
+    def _build_tick_snapshot(
+        self,
+        body_names: Sequence[str],
+        body_rows: npt.NDArray[np.float64],
+        *,
+        step_index: int,
+        include_objects: bool = True,
+    ) -> TickSnapshot:
+        """Memoise every required handle once for this tick."""
+        pose_by_name = {
+            name: body_pose_to_T(body_rows[index])
+            for index, name in enumerate(body_names)
+        }
+        bodies = {
+            body: RigidState(Pose(pose_by_name[str(body)]))
+            for body in self._sensor_requires.bodies
+        }
+        if include_objects:
+            for body in self._sensor_requires.objects:
+                bodies[body] = RigidState(self._object_pose(body))
+        deformables: dict[BodyId, DeformableState] = {}
+        bridge = self._tactile_bridge
+        state = self._tactile_state
+        if bridge is not None and state is not None:
+            for body in self._sensor_requires.deformables:
+                pad = state.pads.get(str(body))
+                if pad is None or pad.vertices is None:
+                    raise RuntimeError(
+                        f"deformable {body!r} has no live vertices this tick"
+                    )
+                surface = bridge.pad_surfaces_by_name[str(body)]
+                frame = bridge.pad_world_frames.get(str(body))
+                deformables[body] = DeformableState(
+                    frame=Pose(frame) if frame is not None else Pose.identity(),
+                    vertices=pad.vertices,
+                    triangles=surface.triangles,
+                )
+        cameras: dict[CameraId, Pose] = {}
+        for camera in self._sensor_requires.cameras:
+            pad = self._aperture_pads[str(camera)]
+            local = self._aperture_camera_local[str(camera)]
+            cameras[camera] = Pose(pose_by_name[pad.frame.body_name]) @ Pose(local)
+        return TickSnapshot(
+            step_index=step_index,
+            timestamp_us=round(self._physics_steps_total * self._dt * 1e6),
+            bodies=bodies,
+            deformables=deformables,
+            cameras=cameras,
+        )
 
-        Returns only pads that record the ``depth`` stream.  Taxim-only cameras
-        still fill ``_tactile_live_depth`` with the aperture-masked live gel
-        depth; outside the aperture they hold the per-pad rest baseline so the
-        rest-minus-live height map is zero there.
-        """
+    def _refresh_physx_objects(self) -> None:
+        """Refresh PhysX-owned contact objects so a snapshot sees this tick."""
+        for body in self._sensor_requires.objects:
+            name = str(body)
+            if name in self._uipc_proxies:
+                continue
+            self._rigids[self._contact_object_paths[name]].update(self._dt)
+
+    def _object_pose(self, body: BodyId) -> Pose:
+        """World pose of one declared contact object for this tick."""
+        name = str(body)
+        prim_path = self._contact_object_paths.get(name)
+        if prim_path is None:
+            raise RuntimeError(
+                f"contact object {name!r} was not resolved from the scene actors"
+            )
+        if name in self._uipc_proxies:
+            bridge = self._tactile_bridge
+            state = self._tactile_state
+            if bridge is None or state is None:
+                raise RuntimeError(
+                    f"contact object {name!r} has no UIPC exchange state this tick"
+                )
+            handle = self._uipc_object_handles.get(name)
+            if handle is None:
+                raise RuntimeError(f"UIPC object {name!r} has no manager handle")
+            obj = bridge.read_object(handle)
+            if not obj.valid:
+                raise RuntimeError(f"UIPC object {name!r} has no valid pose")
+            return Pose(obj.T)
+        if prim_path not in self._rigids:
+            raise RuntimeError(
+                f"contact object {name!r} has no spawnable PhysX body"
+            )
+        row = cast(
+            npt.NDArray[np.float64],
+            self._rigids[prim_path].data.root_pose_w.torch[0].cpu().numpy(),
+        )
+        return Pose(body_pose_to_T(row))
+
+    def _observe_tactile_sensors(self, snap: TickSnapshot) -> None:
+        """Drive every bound sensor for one frame and merge its streams."""
         state = self._tactile_state
         if state is None:
-            raise RuntimeError("tactile depth requested before tactile state exists")
-        depths: dict[str, npt.NDArray[np.float32]] = {}
-        self._tactile_live_depth = {}
-        for side in self._tactile_depth_cameras:
-            pad_state = state.pads.get(side)
-            visual = self._tactile_visuals.get(side)
-            if pad_state is None or pad_state.vertices is None:
-                raise RuntimeError(f"tactile pad {side!r} has no live vertices")
-            if visual is None:
-                raise RuntimeError(f"tactile pad {side!r} has no far-sheet visual")
-            raster = visual.geometry(
-                pad_state.vertices, self._marker_camera_pose(side)
-            )
-            depth = np.asarray(raster.depth, dtype=np.float32)
-            rest = self._tactile_rest_depth.get(side)
-            if rest is None:
-                raise RuntimeError(
-                    f"tactile pad {side!r} has no rest depth baseline; call "
-                    "start_tactile() before reading depth"
-                )
-            if rest.shape != depth.shape:
-                raise RuntimeError(
-                    f"tactile pad {side!r} rest/live depth shapes differ: "
-                    f"{rest.shape} vs {depth.shape}"
-                )
-            mask = self._marker_aperture_mask(
-                side, (int(depth.shape[1]), int(depth.shape[0]))
-            )
-            if mask is not None:
-                mask &= raster.mask
-            else:
-                mask = raster.mask
-            self._tactile_live_depth[side] = np.where(mask, depth, rest)
-            if side not in self._tactile_depth_record_sides:
-                continue
-            depths[side] = np.where(mask, depth, np.float32(0.0))
-        return depths
-
-    def _read_tactile_images(
-        self,
-    ) -> tuple[
-        dict[str, npt.NDArray[np.uint8]], dict[str, npt.NDArray[np.uint8]]
-    ]:
-        """Render optical RGB and marker masks once per frame from live vertices."""
+            return
+        depth: dict[str, npt.NDArray[np.float32]] = {}
         rgb: dict[str, npt.NDArray[np.uint8]] = {}
         marker: dict[str, npt.NDArray[np.uint8]] = {}
-        state = self._tactile_state
-        if state is None:
-            return rgb, marker
-        for side, backend in sorted(self._optical_backends.items()):
-            pad_state = state.pads.get(side)
-            if pad_state is None or pad_state.vertices is None:
-                raise RuntimeError(f"optical pad {side!r} has no live vertices")
-            pad = self._aperture_pads[side]
-            wants_rgb = "rgb" in pad.render_kinds
-            wants_marker = side in self._tactile_marker_sides
-            if not wants_rgb and not wants_marker:
-                continue
-            frame = backend.render(
-                pad_state.vertices,
-                self._marker_camera_pose(side),
-                camera_depth_m=self._tactile_live_depth.get(side),
-                rest_depth_m=self._tactile_rest_depth.get(side),
-            )
-            expected = (backend.image_size[1], backend.image_size[0], 3)
-            if "rgb" in pad.render_kinds:
-                if frame.tactile_rgb.shape != expected:
-                    raise RuntimeError(
-                        f"optical sensor {side!r} returned "
-                        f"{frame.tactile_rgb.shape}, expected {expected}"
-                    )
-                rgb[side] = frame.tactile_rgb
-            if side in self._tactile_marker_sides:
-                if frame.marker_rgb.shape != expected:
-                    raise RuntimeError(
-                        f"marker sensor {side!r} returned "
-                        f"{frame.marker_rgb.shape}, expected {expected}"
-                    )
-                marker[side] = frame.marker_rgb
-        return rgb, marker
+        heights: dict[str, npt.NDArray[np.float64]] = {}
+        for side, sensor in sorted(self._tactile_sensors.items()):
+            observation = sensor.observe(snap)
+            streams = observation.streams()
+            depth_image = streams.get("depth")
+            if depth_image is not None:
+                depth[side] = cast(npt.NDArray[np.float32], depth_image)
+            rgb_image = streams.get("rgb")
+            if rgb_image is not None:
+                rgb[side] = cast(npt.NDArray[np.uint8], rgb_image)
+            marker_image = streams.get("marker_rgb")
+            if marker_image is not None:
+                marker[side] = cast(npt.NDArray[np.uint8], marker_image)
+            height_image = observation.extras().get("height_mm")
+            if height_image is not None:
+                heights[side] = cast(npt.NDArray[np.float64], height_image)
+        updates: dict[str, Any] = {}
+        if self._tactile_depth_record_sides:
+            updates["tactile_depth"] = {
+                side: depth[side]
+                for side in self._tactile_depth_record_sides
+                if side in depth
+            }
+        if self._tactile_sensors:
+            updates["tactile_rgb"] = rgb
+            updates["tactile_marker_rgb"] = marker
+        self._tactile_height_maps = heights
+        self._tactile_frame_cameras = {
+            str(camera): pose.matrix for camera, pose in snap.cameras.items()
+        }
+        self._tactile_frame_objects = {
+            str(body): snap.pose(body).matrix
+            for body in self._sensor_requires.objects
+        }
+        self._tactile_state = replace(state, **updates)
 
 
 class SceneArm:
