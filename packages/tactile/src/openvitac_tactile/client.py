@@ -12,7 +12,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from multiprocessing import shared_memory
-from typing import Any, cast
+from typing import Any, Self, cast
 
 from .config import TactileCfg
 from .protocol import (
@@ -346,7 +346,7 @@ class TactileRuntime:
         self._state_shm = None
         self._finger_shm = None
 
-    def __enter__(self) -> TactileRuntime:
+    def __enter__(self) -> Self:
         self.start()
         return self
 

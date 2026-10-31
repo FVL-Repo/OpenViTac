@@ -117,7 +117,7 @@ def rewrite_mesh_topology(
         corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0]
     )
     lengths = np.linalg.norm(face_normals, axis=1)
-    if np.any(lengths == 0.0):
+    if np.any(lengths <= 0.0):
         raise ValueError("gelpad surface has degenerate triangles")
     face_normals = (face_normals / lengths[:, None]).repeat(3, axis=0)
     mesh.GetNormalsAttr().Set(

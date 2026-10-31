@@ -1,4 +1,4 @@
-"""In-USB: insert the USB into the slot (ported; see notes/legacy-pitfalls.md)."""
+"""In-USB: insert the USB into the slot."""
 
 from __future__ import annotations
 

@@ -100,8 +100,6 @@ class SensorMappingTests(unittest.TestCase):
         self.assertEqual(right.frame.body_name, "XenseWS_right")
         self.assertEqual(left.material.youngs_mpa, 15.0)
         self.assertEqual(right.material.constraint_strength, 2e5)
-        self.assertEqual(left.frame.attach_radius_m, 0.0008)
-        self.assertEqual(right.frame.attach_radius_m, 0.0008)
         self.assertEqual(cfg.reset.settle_max_steps, 180)
         self.assertEqual(len({pad.side for pad in cfg.pads}), 2)
 

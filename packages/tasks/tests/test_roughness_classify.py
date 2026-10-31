@@ -14,7 +14,7 @@ from openvitac_tasks import Action
 from openvitac_tasks.motion import HAND_TO_GEL_FACE, PAD_NORMAL_IN_HAND
 from openvitac_tasks.tasks.roughness_classify import (
     _APPROACH_CLEARANCE,
-    _CLOSE_Q,
+    _CLOSE_Q_BY_BLOCK,
     _GRASP_HEIGHT,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
@@ -45,8 +45,8 @@ class _Gripper:
 
     def set_target(self, qpos: float) -> None:
         world = self._world
-        # The task commands its width-derived _CLOSE_Q, not the hardware limit.
-        if qpos == _CLOSE_Q and self._qpos != _CLOSE_Q:
+        # The task commands its width-derived close, not the hardware limit.
+        if qpos in _CLOSE_Q_BY_BLOCK.values() and self._qpos != qpos:
             world.events.append(("close", 1))
             world.holding = True
         elif qpos == self.open_qpos and self._qpos != self.open_qpos:
@@ -192,9 +192,10 @@ class RoughnessClassifyTests(unittest.TestCase):
             self.assertAlmostEqual(float(got), want, places=4)
 
     def test_close_position_matches_the_recorded_command(self) -> None:
-        # The fixed UIPC episode commanded 3.376 mm for the 15.88 mm block
-        # (1 mm gel overtravel; measured pad-face gap 7.1276 mm at q=0).
-        self.assertAlmostEqual(_CLOSE_Q, 0.0033762, places=7)
+        # Both blocks are grasped on the gel, so each close comes from its own
+        # width (1 mm gel overtravel; measured pad-face gap 7.1276 mm at q=0).
+        self.assertAlmostEqual(_CLOSE_Q_BY_BLOCK["smooth_block"], 0.0029362, places=7)
+        self.assertAlmostEqual(_CLOSE_Q_BY_BLOCK["rough_block"], 0.0033762, places=7)
 
     def test_randomizer_samples_both_labels_and_table_standby(self) -> None:
         seen: set[str] = set()
@@ -213,6 +214,9 @@ class RoughnessClassifyTests(unittest.TestCase):
             )
             selected = _BLOCKS[label]
             other = _BLOCKS["rough" if label == "smooth" else "smooth"]
+            self.assertEqual(
+                randomization.contact_object, f"/World/actors/{selected}"
+            )
             self.assertEqual(
                 randomization.actor_poses[f"/World/actors/{selected}"].position,
                 _START,

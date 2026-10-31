@@ -1,15 +1,16 @@
 """openvitac_sim: sim primitives. The only package allowed to import isaaclab/omni/pxr.
 
 isaaclab-dependent submodules (``spawn``/``robot``/``scene``) are lazy-loaded via
-PEP 562 ``__getattr__``: importing this package never touches isaaclab before the app
-is up.  ``spec`` and ``sensors`` are isaaclab-free and import eagerly.
+PEP 562 ``__getattr__``, re-exported from :mod:`openvitac_sim._lazy`: importing this
+package never touches isaaclab before the app is up.  ``spec`` and ``sensors`` are
+isaaclab-free and import eagerly.
 """
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
 
+from ._lazy import __getattr__ as __getattr__
 from .app import launch
 from .assets import asset, assets_root
 from .sensors import (
@@ -43,31 +44,6 @@ from .spec import (
     SensorBinding,
     XenseWSSensor,
 )
-
-# submodule -> names it exports, imported on first access (post-launch).
-_LAZY: dict[str, tuple[str, ...]] = {
-    "spawn": (
-        "create_joint",
-        "spawn_articulation",
-        "spawn_camera",
-        "spawn_light",
-        "spawn_rigid",
-        "spawn_static",
-    ),
-    "robot": ("RobotArm", "assemble_robot"),
-    "scene": ("Scene", "SceneObservation", "StepLimitExceeded"),
-}
-
-
-def __getattr__(name: str) -> object:
-    for mod_name, names in _LAZY.items():
-        if name in names:
-            module = importlib.import_module(f".{mod_name}", __name__)
-            value = getattr(module, name)
-            globals()[name] = value  # cache so __getattr__ fires once per name
-            return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 
 if TYPE_CHECKING:
     from .robot import RobotArm, assemble_robot

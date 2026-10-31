@@ -53,7 +53,6 @@ def _pad(binding: SensorBinding) -> PadCfg:
             rot_xyzw=(0.0, 0.0, 0.0, 1.0),
             back_axis="z" if is_gsmini else "y",
             back_is_min=True if is_gsmini else None,
-            attach_radius_m=binding.mount.attach_radius_m,
         ),
         geometry=(
             PadGeometryCfg(
@@ -88,12 +87,11 @@ def tactile_plan_from_scene(
     """Build the tactile config from ``spec.sensors`` and ``spec.actors``.
 
     ``objects`` defaults to the dynamic UIPC/PhysX actors in the scene.  Settling is
-    the strictest binding protocol (max stable/max steps) so a mixed pair does not
-    let one pad publish before it settles.
+    the strictest binding protocol (max steps) so a mixed pair does not let one pad
+    publish before it settles.
     """
     pads = tuple(_pad(binding) for binding in spec.sensors)
     settle = [binding.sensor.settle for binding in spec.sensors]
-    stable = [p.stable_steps for p in settle if p is not None]
     max_steps = [p.max_steps for p in settle if p is not None]
     return TactileCfg(
         enabled=bool(pads),
@@ -103,7 +101,6 @@ def tactile_plan_from_scene(
         ),
         include_uipc_fingers=include_uipc_fingers,
         reset=ResetCfg(
-            settle_stable_steps=max(stable) if stable else None,
             settle_max_steps=max(max_steps) if max_steps else 0,
         ),
     )

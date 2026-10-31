@@ -120,9 +120,10 @@ def _translate(x: float, y: float, z: float) -> NDArray[np.float64]:
 
 def _frame_to_T(pad: PadCfg) -> NDArray[np.float64]:
     x, y, z, qx, qy, qz, qw = (*pad.frame.pos, *pad.frame.rot_xyzw)
-    norm = float(np.sqrt(qx * qx + qy * qy + qz * qz + qw * qw))
-    if not np.isfinite(norm) or norm == 0.0:
+    sq_norm = qx * qx + qy * qy + qz * qz + qw * qw
+    if not np.isfinite(sq_norm) or sq_norm <= 0.0:
         raise ValueError(f"pad {pad.name!r} frame rotation is invalid")
+    norm = float(np.sqrt(sq_norm))
     qx, qy, qz, qw = qx / norm, qy / norm, qz / norm, qw / norm
     T = np.eye(4, dtype=np.float64)
     T[:3, :3] = [

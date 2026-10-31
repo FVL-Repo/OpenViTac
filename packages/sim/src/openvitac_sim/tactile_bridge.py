@@ -183,7 +183,6 @@ def _pad_for_side(
             rot_xyzw=(0.0, 0.0, 0.0, 1.0),
             back_axis="z" if gsmini else "y",
             back_is_min=True if gsmini else None,
-            attach_radius_m=getattr(sensor, "attach_radius", None),
         ),
         geometry=(
             PadGeometryCfg(
@@ -287,7 +286,6 @@ def tactile_cfg_from_sensor(
         objects=tuple(objects),
         include_uipc_fingers=include_uipc_fingers,
         reset=ResetCfg(
-            settle_stable_steps=(settle.stable_steps if settle is not None else None),
             settle_max_steps=(settle.max_steps if settle is not None else 0),
         ),
     )

@@ -46,10 +46,6 @@ NOT_READY: dict[TaskName, str] = {
         "asset bbox 26 um vs the gate's 1 um; close is not width-derived "
         "(close_qpos=0) and the tactile crush check is pending"
     ),
-    "roughness_classify": (
-        "smooth-label episodes still grasp the PhysX smooth_block; only "
-        "rough_block is UIPC"
-    ),
     "turn_gear_pair": "stub; Xense/Robotiq embodiment, no GsMini pads",
 }
 
@@ -72,7 +68,10 @@ CLOSE: dict[str, dict[str, tuple[float, float, float]]] = {
         "block_red_hexagonal_prism": (0.031176, 0.001, 0.0110242),
     },
     "pull_drawer": {"upper_drawer": (0.020000, 0.0015, 0.0049362)},
-    "roughness_classify": {"rough_block": (0.01588, 0.001, 0.0033762)},
+    "roughness_classify": {
+        "smooth_block": (0.01500, 0.001, 0.0029362),
+        "rough_block": (0.01588, 0.001, 0.0033762),
+    },
     "roughness_regrasp": {
         "smooth_block": (0.01500, 0.001, 0.0029362),
         "rough_block": (0.01588, 0.001, 0.0033762),
@@ -120,7 +119,7 @@ CLOSE_CONST = {
     ),
     "roughness_classify": (
         "openvitac_tasks.tasks.roughness_classify",
-        "_CLOSE_Q",
+        "_CLOSE_Q_BY_BLOCK",
     ),
     "roughness_regrasp": (
         "openvitac_tasks.tasks.roughness_regrasp",

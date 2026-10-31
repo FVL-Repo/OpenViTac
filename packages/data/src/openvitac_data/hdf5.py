@@ -209,9 +209,10 @@ def _pose_to_T(pose_xyzw: npt.NDArray[np.floating[Any]]) -> npt.NDArray[np.float
     if pose.shape != (7,):
         raise ValueError(f"object pose must be (7,), got {pose.shape}")
     qx, qy, qz, qw = pose[3:]
-    norm = float(np.sqrt(qx * qx + qy * qy + qz * qz + qw * qw))
-    if not np.isfinite(norm) or norm == 0.0:
+    sq_norm = qx * qx + qy * qy + qz * qz + qw * qw
+    if not np.isfinite(sq_norm) or sq_norm <= 0.0:
         raise ValueError("object pose quaternion must be finite and nonzero")
+    norm = float(np.sqrt(sq_norm))
     qx, qy, qz, qw = qx / norm, qy / norm, qz / norm, qw / norm
     T = np.eye(4, dtype=np.float64)
     T[:3, :3] = [

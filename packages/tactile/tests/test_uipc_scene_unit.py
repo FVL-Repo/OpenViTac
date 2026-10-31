@@ -149,42 +149,60 @@ def _install_uipc_stubs() -> dict[str, types.ModuleType | None]:
     def identity(geometry: _Geom) -> _Geom:
         return geometry
 
-    uipc = types.ModuleType("uipc")
-    setattr(uipc, "builtin", types.SimpleNamespace(is_fixed="is_fixed", is_constrained="is_constrained", aim_position="aim_position", aim_transform="aim_transform"))
-    setattr(uipc, "view", lambda slot: slot.array)
-    setattr(uipc, "Transform", object)
-    setattr(uipc, "Vector3", object)
-    setattr(uipc, "Logger", types.SimpleNamespace(set_level=lambda *_args: None, Level=types.SimpleNamespace(Warn=0)))
+    def view(slot: Any) -> Any:
+        return slot.array
 
-    constitution = types.ModuleType("uipc.constitution")
-    setattr(constitution, "AffineBodyConstitution", _RecordingAbd)
-    setattr(constitution, "ElasticModuli", _ElasticModuli)
-    setattr(constitution, "SoftPositionConstraint", _Recorder)
-    setattr(constitution, "SoftTransformConstraint", _Recorder)
-    setattr(constitution, "StableNeoHookean", _RecordingSnh)
+    def extract_surface(geom: _Geom) -> _Geom:
+        return _Geom(geom.vertices_array.copy())
 
-    core = types.ModuleType("uipc.core")
-    setattr(core, "Engine", object)
-    setattr(core, "World", object)
-    setattr(core, "Scene", object)
-    setattr(core, "ContactSystemFeature", object)
+    def tetmesh(vertices: Any, _tets: Any) -> _Geom:
+        return _Geom(vertices)
 
-    geometry = types.ModuleType("uipc.geometry")
-    setattr(geometry, "Geometry", _Geom)
-    setattr(geometry, "extract_surface", lambda geom: _Geom(geom.vertices_array.copy()))
-    setattr(geometry, "label_surface", identity)
-    setattr(geometry, "label_triangle_orient", identity)
-    setattr(geometry, "flip_inward_triangles", identity)
-    setattr(geometry, "tetmesh", lambda vertices, tets: _Geom(vertices))
+    # The stub modules are assembled dynamically, so their attributes are untyped.
+    uipc: Any = types.ModuleType("uipc")
+    uipc.builtin = types.SimpleNamespace(
+        is_fixed="is_fixed",
+        is_constrained="is_constrained",
+        aim_position="aim_position",
+        aim_transform="aim_transform",
+    )
+    uipc.view = view
+    uipc.Transform = object
+    uipc.Vector3 = object
+    uipc.Logger = types.SimpleNamespace(
+        set_level=lambda *_args: None,
+        Level=types.SimpleNamespace(Warn=0),
+    )
 
-    unit = types.ModuleType("uipc.unit")
-    setattr(unit, "GPa", 1000000000.0)
-    setattr(unit, "MPa", _MPA)
+    constitution: Any = types.ModuleType("uipc.constitution")
+    constitution.AffineBodyConstitution = _RecordingAbd
+    constitution.ElasticModuli = _ElasticModuli
+    constitution.SoftPositionConstraint = _Recorder
+    constitution.SoftTransformConstraint = _Recorder
+    constitution.StableNeoHookean = _RecordingSnh
 
-    setattr(uipc, "constitution", constitution)
-    setattr(uipc, "core", core)
-    setattr(uipc, "geometry", geometry)
-    setattr(uipc, "unit", unit)
+    core: Any = types.ModuleType("uipc.core")
+    core.Engine = object
+    core.World = object
+    core.Scene = object
+    core.ContactSystemFeature = object
+
+    geometry: Any = types.ModuleType("uipc.geometry")
+    geometry.Geometry = _Geom
+    geometry.extract_surface = extract_surface
+    geometry.label_surface = identity
+    geometry.label_triangle_orient = identity
+    geometry.flip_inward_triangles = identity
+    geometry.tetmesh = tetmesh
+
+    unit: Any = types.ModuleType("uipc.unit")
+    unit.GPa = 1000000000.0
+    unit.MPa = _MPA
+
+    uipc.constitution = constitution
+    uipc.core = core
+    uipc.geometry = geometry
+    uipc.unit = unit
     sys.modules.update(
         {
             "uipc": uipc,

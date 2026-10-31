@@ -1,11 +1,9 @@
-import cyclopts
+"""OpenViTac command-line interface.
 
-# Commands load lazily so ``sample-seeds`` never imports ``openvitac_sim``
-# (and through it the app launch machinery).  Detailed help comes from each
-# command's docstring when it is resolved.
-main = cyclopts.App()
-main.command("openvitac_cli.commands.collect:collect")
-main.command("openvitac_cli.commands.sample_seeds:sample_seeds")
-main.command("openvitac_cli.commands.tasks:tasks")
+The application object lives in :mod:`openvitac_cli.app`; it is re-exported here
+so the ``openvitac`` entry point keeps resolving to ``openvitac_cli:main``.
+"""
+
+from .app import main
 
 __all__ = ["main"]

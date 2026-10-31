@@ -40,8 +40,8 @@ _LABELS = ("smooth", "rough")
 _BLOCK_BY_LABEL = {"smooth": "smooth_block", "rough": "rough_block"}
 _PLATE_BY_LABEL = {"smooth": "blue_plate", "rough": "yellow_plate"}
 # The table top is at 2.5 mm (a 1 m cube scaled to 5 mm in the authored USD).
-# Spawn 1.5 mm above it: PhysX settles the block onto the table, while UIPC
-# rejects any initial overlap with the fixed support body.
+# Spawn 1.5 mm above it: UIPC rejects any initial overlap with the fixed
+# support body, so the block must start clear and settle onto it.
 _BLOCK_START_POS = (0.38, 0.0, 0.004)
 _BLOCK_STANDBY_POS = (0.30, 0.25, 0.004)
 # UIPC fixed supports mirror the PhysX table and the matching plate: box
@@ -52,14 +52,19 @@ _BLOCK_STANDBY_POS = (0.30, 0.25, 0.004)
 _TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.3, 0.3, 0.0012))
 _PLATE_SUPPORT_BOX = ((0.0, 0.0, 0.0033), (0.04, 0.04, 0.0027))
 _GRASP_HEIGHT = 0.035
-# Grasp width: the commanded close comes from the block width through the
-# shared close law (motion.pad_close_q).  The width comes from the asset bounds
-# (black_rough_cuboid.usd x,y bounds = +/-0.00794 m).  Siblings keep
-# close_qpos: they still grasp PhysX blocks, where the pad_proxy stops the
-# fingers before the gel.
-_BLOCK_WIDTH = 0.01588
+# Both blocks are UIPC bodies, so the commanded close comes from the grasped
+# block's own width through the shared close law (motion.pad_close_q).  The
+# widths are the asset bounds (black_smooth_cuboid.usd +/-0.00750 m,
+# black_rough_cuboid.usd +/-0.00794 m).  The gel is the contact surface on the
+# UIPC path, so a blind close would crush it.
+_BLOCK_WIDTH_BY_NAME = {"smooth_block": 0.01500, "rough_block": 0.01588}
+_CLOSE_Q_BY_BLOCK = {
+    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_NAME.items()
+}
 _GEL_THICKNESS = 0.004
-_CLOSE_Q = pad_close_q(_BLOCK_WIDTH)
+# Neither cuboid USD authors a mass density; 1e3 kg/m^3 is the PhysX default
+# and the UIPC bridge default, so the explicit value only pins the path.
+_BLOCK_DENSITY = 1.0e3
 _APPROACH_CLEARANCE = 0.05
 _LIFT_HEIGHT = 0.05
 _TARGET_BLOCK_Z = 0.01
@@ -90,6 +95,7 @@ def _randomize(task: Task, seed: int) -> EpisodeRandomization:
         seed=seed,
         instruction=f"Place the {label} block on the {target.replace('_', ' ')}.",
         actor_poses=poses,
+        contact_object=f"/World/actors/{selected}",
         metadata={"roughness_label": label, "target_plate": target},
     )
 
@@ -160,7 +166,7 @@ def _enter(
             goal = (bx, by, grasp_z + HAND_TO_GEL_FACE)
             ticks = _MOVE_TICKS
         case _RoughnessPhase.CLOSE:
-            qpos = _CLOSE_Q  # gel face _GRASP_OVERTRAVEL into the block per side
+            qpos = _CLOSE_Q_BY_BLOCK[block]  # 1 mm gel overtravel per side
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
         case _RoughnessPhase.LIFT:
@@ -371,11 +377,15 @@ RoughnessClassify = Task(
             uipc_fixed_boxes=(_PLATE_SUPPORT_BOX,),
             authority="physx",
         ),
+        # Both blocks are UIPC bodies; the episode's contact object is the
+        # selected one (see _randomize), so neither is flagged here.
         Actor(
             "roughness_task/black_smooth_cuboid.usd",
             "/World/actors/smooth_block",
             pos=_BLOCK_STANDBY_POS,
-            authority="physx",
+            authority="uipc",
+            tactile_mesh="roughness_task/black_smooth_cuboid_tet.npz",
+            density=_BLOCK_DENSITY,
         ),
         Actor(
             "roughness_task/black_rough_cuboid.usd",
@@ -383,7 +393,7 @@ RoughnessClassify = Task(
             pos=_BLOCK_START_POS,
             authority="uipc",
             tactile_mesh="roughness_task/black_rough_cuboid_tet.npz",
-            contact_object=True,
+            density=_BLOCK_DENSITY,
         ),
     ),
     instruction=(

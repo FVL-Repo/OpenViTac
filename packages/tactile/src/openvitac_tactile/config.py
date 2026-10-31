@@ -1,7 +1,6 @@
 """Configuration dataclasses for the OpenViTac tactile runtime.
 
-The field names are the public contract from
-``~/OpenViTac/design/uipc-integration-design.md``.  This module deliberately
+The field names are the public contract.  This module deliberately
 imports no UIPC/Isaac code so the parent process can import it anywhere.
 """
 
@@ -77,7 +76,6 @@ class PadFrameCfg:
     back_axis: Literal["x", "y", "z"] = "y"
     back_value_m: float = 0.0
     back_is_min: bool | None = None
-    attach_radius_m: float | None = None
 
     def __post_init__(self) -> None:
         if not self.body_name:
@@ -86,8 +84,6 @@ class PadFrameCfg:
             raise ValueError("PadFrameCfg.body_prim_path must not be empty")
         if len(self.pos) != 3 or len(self.rot_xyzw) != 4:
             raise ValueError("PadFrameCfg.pos/rot_xyzw have wrong length")
-        if self.attach_radius_m is not None and self.attach_radius_m < 0.0:
-            raise ValueError("PadFrameCfg.attach_radius_m must be >= 0")
 
 
 @dataclass(frozen=True)
@@ -175,8 +171,8 @@ class ObjectCfg:
             )
         if self.contact_object and self.fixed:
             raise ValueError("ObjectCfg.contact_object must be a non-fixed object")
-        for _center, half in self.boxes:
-            if len(_center) != 3 or len(half) != 3:
+        for center, half in self.boxes:
+            if len(center) != 3 or len(half) != 3:
                 raise ValueError("ObjectCfg.boxes entries must be 3-vectors")
             if any(value <= 0.0 for value in half):
                 raise ValueError("ObjectCfg.boxes half extents must be positive")
@@ -243,13 +239,10 @@ class FallbackCfg:
 
 @dataclass(frozen=True)
 class ResetCfg:
-    settle_stable_steps: int | None = None
     settle_max_steps: int = 0
     warmup_steps: int = 0
 
     def __post_init__(self) -> None:
-        if self.settle_stable_steps is not None and self.settle_stable_steps < 0:
-            raise ValueError("ResetCfg.settle_stable_steps must be >= 0")
         if self.settle_max_steps < 0 or self.warmup_steps < 0:
             raise ValueError("ResetCfg step counts must be >= 0")
 

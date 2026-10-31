@@ -279,7 +279,7 @@ def recorded_step_indices(steps: int, every: int) -> tuple[int, ...]:
 
     ``every=1`` records every step. The first step is always recorded, so
     ``steps=5, every=2`` yields ``(0, 2, 4)``: three frames whose timestamps are
-    ``index * sim_dt_us`` (0, 16666, 33332 µs for the 120 Hz sim).
+    ``index * sim_dt_us`` (0, 16666, 33332 μs for the 120 Hz sim).
     """
     if every <= 0:
         raise ValueError(f"record cadence must be positive, got {every}")

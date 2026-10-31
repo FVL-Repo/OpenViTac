@@ -104,11 +104,6 @@ def _pad_from_dict(raw: Mapping[str, Any]) -> PadCfg:
             back_is_min=(
                 None if frame.get("back_is_min") is None else bool(frame["back_is_min"])
             ),
-            attach_radius_m=(
-                None
-                if frame.get("attach_radius_m") is None
-                else float(frame["attach_radius_m"])
-            ),
         ),
         geometry=PadGeometryCfg(
             kind=geometry.get("kind", "box"),
@@ -203,7 +198,6 @@ def _cfg_from_request(request: Mapping[str, Any]) -> TactileCfg | None:
         include_uipc_fingers=bool(data.get("include_uipc_fingers", False)),
         gravity_mps2=_tuple3(data.get("gravity_mps2", (0, 0, -9.8)), "gravity"),
         reset=ResetCfg(
-            settle_stable_steps=reset_raw.get("settle_stable_steps"),
             settle_max_steps=int(reset_raw.get("settle_max_steps", 0)),
             warmup_steps=int(reset_raw.get("warmup_steps", 0)),
         ),
