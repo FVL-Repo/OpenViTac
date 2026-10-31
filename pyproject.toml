@@ -1,0 +1,82 @@
+[project]
+name = "openvitac"
+version = "0.0.0"
+description = "OpenViTac benchmark"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openvitac-cli",
+    "openvitac-data",
+    "openvitac-sim",
+    "openvitac-spec",
+    "openvitac-tasks",
+    "typing-extensions>=4.12",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.16", "ty>=0.0.91"]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+
+[tool.uv.sources]
+openvitac-cli = { workspace = true }
+openvitac-data = { workspace = true }
+openvitac-sim = { workspace = true }
+openvitac-spec = { workspace = true }
+openvitac-tactile = { workspace = true }
+openvitac-tasks = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "packages/cli",
+    "packages/data",
+    "packages/sim",
+    "packages/spec",
+    "packages/tactile",
+    "packages/tasks",
+]
+
+[tool.ruff]
+# Vendored Taxim torch backend; keep upstream formatting and license text.
+exclude = ["packages/sim/src/openvitac_sim/taxim_core"]
+
+[tool.ruff.lint]
+extend-select = ["PYI"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+preview = true
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "openvitac_cli",
+    "openvitac_data",
+    "openvitac_sim",
+    "openvitac_spec",
+    "openvitac_tactile",
+    "openvitac_tasks",
+]
+
+[tool.ty.src]
+exclude = ["packages/sim/src/openvitac_sim/taxim_core"]
+
+[tool.ty.environment]
+python-version = "3.12"
+extra-paths = [
+    "typings",
+    ".venv/lib/python3.12/site-packages/isaaclab/source/isaaclab",
+    "packages/tactile/src",
+    "packages/sim/src",
+    "packages/spec/src",
+    "packages/tasks/src",
+    "packages/data/src",
+    "packages/cli/src",
+]
+
+[tool.ty.rules]
+dynamic-function-decorator-return = "error"
+missing-type-argument = "error"
+possibly-unresolved-reference = "warn"
+unsound-return-statement = "error"
