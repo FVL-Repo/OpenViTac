@@ -1,0 +1,861 @@
+"use strict";
+
+const config = window.OPENVITAC_CONFIG || { resources: [], demos: [] };
+
+function initShowcase() {
+  const root = document.querySelector("#showcase");
+  const highlights = config.highlights || [];
+  if (!root || !highlights.length) return;
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const container = root.querySelector(".showcase-slides");
+  const pagination = root.querySelector(".showcase-pagination");
+  const status = root.querySelector("#showcase-status");
+  let active = 0;
+  let paused = motion.matches;
+  let visible = false;
+  let startPointer = null;
+  let slideAnimations = [];
+  const slides = highlights.map((item, index) => {
+    const slide = document.createElement("article");
+    slide.className = "showcase-slide";
+    slide.setAttribute("aria-roledescription", "slide");
+    slide.setAttribute("aria-label", `${index + 1} of ${highlights.length}: ${item.label}`);
+    const video = document.createElement("video");
+    video.className = "showcase-video";
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.preload = "none";
+    video.poster = `${item.path}/poster.webp`;
+    video.setAttribute("aria-label", item.alt);
+    const banner = document.createElement("div");
+    banner.className = "showcase-banner";
+    [["h2", "", "OpenViTac"], ["p", "showcase-category", item.label]].forEach(([tag, className, text]) => {
+      const node = document.createElement(tag);
+      node.className = className;
+      node.textContent = text;
+      banner.append(node);
+    });
+    slide.append(video, banner);
+    video.addEventListener("ended", () => {
+      if (index === active && !paused && visible && !document.hidden) select(active + 1);
+    });
+    video.addEventListener("error", () => {
+      if (!slide.querySelector(".showcase-error")) {
+        const message = document.createElement("p");
+        message.className = "showcase-error";
+        message.textContent = "Video unavailable. Try another highlight.";
+        slide.append(message);
+      }
+      syncPlayback();
+    });
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "showcase-page";
+    button.setAttribute("aria-label", `Show video ${index + 1}: ${item.label}`);
+    button.addEventListener("click", () => select(index, true));
+    pagination.append(button);
+    return { slide, video, button, item };
+  });
+  container.replaceChildren(...slides.map(({ slide }) => slide));
+
+  function syncPlayback() {
+    slides.forEach(({ video, item }, index) => {
+      if (index !== active || paused || !visible || document.hidden || video.error) {
+        video.pause();
+        return;
+      }
+      // Load only visited videos; a paused/reduced-motion page needs no MP4 download.
+      if (!video.hasAttribute("src")) video.src = `${item.path}/demo.mp4`;
+      video.play().catch((error) => {
+        if (error.name === "NotAllowedError" && index === active) {
+          paused = true;
+        }
+      });
+    });
+  }
+
+  function select(index, announce = false) {
+    // An explicit selection also starts playback when autoplay was suppressed.
+    if (announce) paused = false;
+    const previous = active;
+    const direction = index > previous ? 1 : -1;
+    active = (index + slides.length) % slides.length;
+    if (previous !== active) {
+      slideAnimations.forEach((animation) => animation.cancel());
+      slideAnimations = [];
+      const incoming = slides[active].video;
+      if (incoming.readyState > 0) incoming.currentTime = 0;
+    }
+    slides.forEach(({ slide, video, button }, i) => {
+      slide.classList.toggle("is-active", i === active);
+      slide.setAttribute("aria-hidden", String(i !== active));
+      button.setAttribute("aria-pressed", String(i === active));
+      if (i !== active) {
+        video.pause();
+      }
+    });
+    if (previous !== active && !motion.matches) {
+      const options = { duration: 560, easing: "cubic-bezier(0.22, 1, 0.36, 1)" };
+      // Freeze the outgoing frame until it leaves; restart it only on re-entry.
+      slideAnimations = [
+        slides[previous].slide.animate([
+          { transform: "translateX(0)", opacity: 1, visibility: "visible" },
+          { transform: `translateX(${-direction * 100}%)`, opacity: 1, visibility: "visible" },
+        ], options),
+        slides[active].slide.animate([
+          { transform: `translateX(${direction * 100}%)`, opacity: 1, visibility: "visible" },
+          { transform: "translateX(0)", opacity: 1, visibility: "visible" },
+        ], options),
+      ];
+    }
+    if (announce) status.textContent = `${active + 1} of ${slides.length}: ${slides[active].item.label}`;
+    syncPlayback();
+  }
+
+  root.querySelectorAll(".showcase-arrow").forEach((button) => {
+    button.hidden = slides.length < 2;
+    button.addEventListener("click", () => select(active + (button.classList.contains("showcase-next") ? 1 : -1), true));
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      select(active + (event.key === "ArrowRight" ? 1 : -1), true);
+    }
+  });
+  root.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" || event.target.closest("button, a")) return;
+    startPointer = { x: event.clientX, y: event.clientY };
+  });
+  root.addEventListener("pointerup", (event) => {
+    if (!startPointer) return;
+    const dx = event.clientX - startPointer.x;
+    const dy = event.clientY - startPointer.y;
+    startPointer = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) select(active + (dx < 0 ? 1 : -1), true);
+  });
+  root.addEventListener("pointercancel", () => { startPointer = null; });
+  new IntersectionObserver(([entry]) => {
+    visible = entry.isIntersecting && entry.intersectionRatio >= 0.25;
+    syncPlayback();
+  }, { threshold: [0, 0.25] }).observe(root);
+  document.addEventListener("visibilitychange", syncPlayback);
+  motion.addEventListener("change", () => {
+    paused = motion.matches;
+    if (motion.matches) slideAnimations.forEach((animation) => animation.cancel());
+    syncPlayback();
+  });
+  select(0);
+}
+initShowcase();
+
+const groups = {
+  all: "All tasks",
+  PP: "Property perception",
+  FA: "Fragility-aware",
+  CR: "Contact-rich",
+  PR: "Precision",
+};
+const tasks = [
+  {
+    id: "WC",
+    name: "Weight classification",
+    group: "PP",
+    image: "weight_classify.png",
+    real: false,
+    description:
+      "Infer an object’s weight from physical interaction and place it according to its weight class.",
+  },
+  {
+    id: "HC",
+    name: "Hardness classification",
+    group: "PP",
+    image: "hardness_classify.png",
+    real: false,
+    description:
+      "Distinguish visually ambiguous objects by hardness and make a property-conditioned placement.",
+  },
+  {
+    id: "RC",
+    name: "Roughness classification",
+    group: "PP",
+    image: "roughness_classify.png",
+    real: true,
+    description:
+      "Feel the surface texture to classify an object and place it in the corresponding location.",
+  },
+  {
+    id: "RR",
+    name: "Roughness-guided regrasp",
+    group: "PP",
+    image: "roughness_regrasp.png",
+    real: false,
+    description:
+      "Use tactile surface information to guide regrasping and property-aware manipulation.",
+  },
+  {
+    id: "ECS",
+    name: "Empty-can selection",
+    group: "PP",
+    image: "empty_can_select.png",
+    real: true,
+    description:
+      "Distinguish an empty can from filled cans through physical interaction, then select and move it.",
+  },
+  {
+    id: "GC",
+    name: "Grasp chip",
+    group: "FA",
+    image: "grasp_chips.png",
+    real: true,
+    description:
+      "Gently grasp and place a fragile chip while regulating contact to avoid damage.",
+  },
+  {
+    id: "GA",
+    name: "Gear assembly",
+    group: "CR",
+    image: "gear_assembly.png",
+    real: true,
+    description:
+      "Assemble a gear by matching the teeth and maintaining effective engagement throughout the interaction.",
+  },
+  {
+    id: "PD",
+    name: "Pull drawer",
+    group: "CR",
+    image: "pull_drawer.png",
+    real: true,
+    description:
+      "Establish and maintain a stable grasp while pulling an articulated drawer open.",
+  },
+  {
+    id: "In-USB",
+    name: "Insert USB",
+    group: "PR",
+    image: "insert_usb.png",
+    real: true,
+    description:
+      "Use contact feedback to align the USB connector with the instructed slot and complete the insertion.",
+  },
+  {
+    id: "In-B v1",
+    name: "Insert block v1",
+    group: "PR",
+    image: "insert_block_v1.png",
+    real: true,
+    description:
+      "Precisely align a held block with a target opening and insert it under tight geometric tolerances.",
+  },
+  {
+    id: "In-B v2",
+    name: "Insert block v2",
+    group: "PR",
+    image: "insert_block_v2_p1.png",
+    extra: "insert_block_v2_p2.png",
+    extraLabel: "View additional task variants",
+    real: true,
+    description:
+      "Select the instructed object before performing a contact-guided, precise block insertion.",
+  },
+];
+
+// Table values transcribed from sec/4_experiments.tex. Last entry is the reported average.
+const policies = [
+  {
+    name: "OpenVTLA",
+    family: "VTLA · Ours",
+    sim: [89, 99, 100, 90, 73, 69, 91, 99, 27, 11, 8, 68.7],
+    real: [95, 85, 95, 50, 60, 20, 15, 100 / 6, 54.6],
+  },
+  {
+    name: "FTP-1",
+    family: "VTLA",
+    sim: [61, 100, 100, 78, 50, 60, 83, 94, 27, 12, 8.3, 61.2],
+    real: [90, 70, 95, 45, 70, 15, 20, 10, 51.9],
+  },
+  {
+    name: "InternVLA-A1.5",
+    family: "VLA",
+    sim: [53, 76, 65, 77, 47, 53, 79, 98, 3, 6, 9.3, 51.5],
+    real: [50, 50, 85, 45, 65, 15, 15, 20, 43.1],
+  },
+  {
+    name: "π₀.₅",
+    family: "VLA",
+    sim: [53, 60, 64, 52, 48, 39, 87, 99, 14, 9, 9.3, 48.6],
+    real: [50, 50, 80, 35, 60, 15, 25, 40 / 3, 41],
+  },
+  {
+    name: "Lingbot-VLA-2",
+    family: "VLA",
+    sim: [52, 58, 58, 53, 52, 41, 78, 92, 8, 5, 2.7, 45.4],
+    real: [50, 50, 75, 15, 50, 5, 10, 100 / 6, 34],
+  },
+  {
+    name: "Xiaomi-Robotics",
+    family: "VLA",
+    sim: [52, 46, 54, 62, 38, 24, 73, 84, 5, 2, 0, 40],
+    real: [50, 50, 80, 25, 40, 5, 15, 20 / 3, 34],
+  },
+  {
+    name: "XVLA",
+    family: "VLA",
+    sim: [28, 30, 56, 47, 45, 42, 84, 76, 2, 3, 0.7, 37.6],
+  },
+  {
+    name: "FastWAM",
+    family: "WAM",
+    sim: [49, 84, 67, 7, 9, 50, 51, 88, 6, 0, 0, 37.4],
+    real: [40, 45, 60, 25, 50, 0, 5, 20 / 3, 29],
+  },
+  {
+    name: "Lingbot-VA",
+    family: "WAM",
+    sim: [50, 44, 39, 40, 44, 22, 59, 15, 2, 2, 6, 29.4],
+  },
+  {
+    name: "StarVLA (Cosmos)",
+    family: "WAM",
+    sim: [51, 67, 94, 9, 13, 1, 33, 22, 3, 1, 3.3, 27],
+  },
+  {
+    name: "StarVLA (Qwen3)",
+    family: "VLA",
+    sim: [44, 38, 42, 35, 32, 10, 26, 35, 4, 0, 0, 24.2],
+  },
+];
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// Configured links are restricted to local files and HTTP(S); no script URLs.
+function safeUrl(value) {
+  if (!value || !value.trim()) return "";
+  try {
+    const url = new URL(value, document.baseURI);
+    return ["http:", "https:", "file:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+const resourceContainer = document.querySelector("#resource-links");
+config.resources.forEach((resource) => {
+  const url = safeUrl(resource.url);
+  const link = element(url ? "a" : "span", "resource-link");
+  if (["arxiv", "github", "huggingface", "modelscope"].includes(resource.icon)) {
+    const icon = element("img", "resource-icon");
+    icon.src = `assets/icons/${resource.icon}.svg`;
+    icon.alt = "";
+    icon.width = 20;
+    icon.height = 20;
+    icon.setAttribute("aria-hidden", "true");
+    link.append(icon);
+  }
+  link.append(element("span", "", resource.label));
+  if (url) {
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.title = resource.description;
+  } else {
+    link.setAttribute("aria-disabled", "true");
+    link.append(element("small", "", "Coming soon"));
+  }
+  resourceContainer.append(link);
+});
+
+let selectedGroup = "all";
+let selectedTask = "In-USB";
+let taskView = "demos";
+let taskDomain = "sim";
+const selectedConditions = new Map();
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let demosPaused = reducedMotion.matches;
+let demoObserver;
+const visibleDemos = new Set();
+
+function syncDemoPlayback() {
+  document.querySelectorAll(".task-demo-video").forEach((video) => {
+    const manualPlay = video.dataset.manualPlay === "true";
+    if ((!demosPaused || manualPlay) && !video.ended && !document.hidden && visibleDemos.has(video)) {
+      video.play().catch((error) => {
+        // Autoplay may be blocked by browser preferences; expose manual play.
+        if (error.name === "NotAllowedError" && video.isConnected && visibleDemos.has(video)) {
+          video.dataset.manualPlay = "false";
+          demosPaused = true;
+          syncDemoPlayback();
+        }
+      });
+    } else video.pause();
+    const overlay = video.parentElement.querySelector(".task-demo-replay");
+    if (overlay) {
+      overlay.hidden = !video.ended && (!demosPaused || manualPlay);
+      overlay.firstElementChild.textContent = video.ended ? "↻ Replay" : "▶ Play";
+      overlay.setAttribute("aria-label", `${video.ended ? "Replay" : "Play"} ${overlay.dataset.outcome} example`);
+    }
+  });
+
+}
+document.addEventListener("visibilitychange", syncDemoPlayback);
+reducedMotion.addEventListener("change", () => {
+  demosPaused = reducedMotion.matches;
+  syncDemoPlayback();
+});
+const filters = document.querySelector("#task-filters");
+Object.entries(groups).forEach(([id, name]) => {
+  const button = element(
+    "button",
+    "",
+    name,
+  );
+  button.type = "button";
+  button.dataset.group = id;
+  const count = id === "all" ? tasks.length : tasks.filter((task) => task.group === id).length;
+  button.append(element("span", "filter-count", String(count)));
+  button.addEventListener("click", () => {
+    selectedGroup = id;
+    const visible = tasks.filter((task) => id === "all" || task.group === id);
+    if (!visible.some((task) => task.id === selectedTask))
+      selectedTask = visible[0].id;
+    taskView = "demos";
+    renderTasks();
+  });
+  filters.append(button);
+});
+
+function renderTasks() {
+  filters
+    .querySelectorAll("button")
+    .forEach((button) =>
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.group === selectedGroup),
+      ),
+    );
+  const list = document.querySelector("#task-list");
+  list.replaceChildren();
+  tasks
+    .filter((task) => selectedGroup === "all" || task.group === selectedGroup)
+    .forEach((task) => {
+      const button = element("button", "", task.name);
+      button.type = "button";
+      button.dataset.task = task.id;
+      button.setAttribute("aria-pressed", String(task.id === selectedTask));
+      button.append(element("span", "", task.id));
+      button.addEventListener("click", () => {
+        selectedTask = task.id;
+        taskView = "demos";
+        list
+          .querySelectorAll("button")
+          .forEach((item) =>
+            item.setAttribute(
+              "aria-pressed",
+              String(item.dataset.task === selectedTask),
+            ),
+          );
+        renderTaskDetail();
+      });
+      list.append(button);
+    });
+  renderTaskDetail();
+}
+
+function renderTaskDetail(focusControl) {
+  demoObserver?.disconnect();
+  visibleDemos.clear();
+  document.querySelectorAll(".task-demo-video").forEach((video) => {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  });
+  const task = tasks.find((task) => task.id === selectedTask);
+  if (!task.real) taskDomain = "sim";
+  const detail = document.querySelector("#task-detail");
+  const header = element("div", "task-detail-header");
+  const titleRow = element("div", "task-title-row");
+  titleRow.append(element("h3", "", task.name));
+  // Shared grid cells reserve space for the longest description at any width.
+  const description = element("p", "task-description");
+  tasks.forEach((item) => {
+    const text = element("span", "", item.description);
+    if (item.id !== task.id) {
+      text.className = "task-description-measure";
+      text.setAttribute("aria-hidden", "true");
+    }
+    description.append(text);
+  });
+  header.append(
+    element("p", "task-category", groups[task.group]),
+    titleRow,
+    description,
+  );
+  const toolbar = element("div", "task-view-toolbar");
+  const domains = element("div", "segmented task-domains");
+  domains.setAttribute("role", "group");
+  domains.setAttribute("aria-label", "Demo environment");
+  const sim = element("button", "", "Simulation");
+  sim.type = "button";
+  sim.setAttribute("aria-pressed", String(taskDomain === "sim"));
+  sim.dataset.taskControl = "simulation";
+  sim.addEventListener("click", () => {
+    taskDomain = "sim";
+    taskView = "demos";
+    renderTaskDetail("simulation");
+  });
+  domains.append(sim);
+  if (task.real) {
+    const available = Boolean(config.taskDemos?.[task.id]?.real);
+    const real = element("button", "", available ? "Real-world" : "Real-world · Soon");
+    real.type = "button";
+    real.disabled = !available;
+    real.dataset.taskControl = "real";
+    real.setAttribute("aria-pressed", String(taskDomain === "real"));
+    real.setAttribute("aria-label", available ? "Real-world demos" : "Real-world demos coming soon");
+    real.addEventListener("click", () => {
+      taskDomain = "real";
+      taskView = "demos";
+      renderTaskDetail("real");
+    });
+    domains.append(real);
+  }
+  const detailsButton = element("button", "task-view-button", taskView === "details" ? "Back to demos" : "Task details");
+  detailsButton.type = "button";
+  detailsButton.dataset.taskControl = "details";
+  detailsButton.setAttribute("aria-pressed", String(taskView === "details"));
+  detailsButton.addEventListener("click", () => {
+    taskView = taskView === "demos" ? "details" : "demos";
+    renderTaskDetail("details");
+  });
+  toolbar.append(domains, detailsButton);
+  header.append(toolbar);
+  detail.replaceChildren(header);
+  if (taskView === "demos") {
+    renderTaskDemos(task, detail);
+  } else {
+    renderTaskFigure(task, detail);
+  }
+  if (focusControl) detail.querySelector(`[data-task-control="${focusControl}"]`)?.focus();
+}
+
+function renderTaskDemos(task, detail) {
+  const base = config.taskDemos?.[task.id];
+  const set = taskDomain === "real" && typeof base?.real === "object" ? { ...base, ...base.real } : base;
+  const conditions = set?.conditions || [];
+  const body = element("div", "task-demo-body");
+  if (!conditions.length) {
+    const empty = element("div", "task-demo-empty");
+    empty.append(element("p", "", `${taskDomain === "real" ? "Real-world" : "Simulation"} demos coming soon.`), element("p", "", "Explore the task sequence in Task details."));
+    body.append(empty);
+    detail.append(body);
+    return;
+  }
+  const conditionKey = `${task.id}:${taskDomain}`;
+  const conditionId = selectedConditions.get(conditionKey) || conditions[0][0];
+  const condition = conditions.find(([id]) => id === conditionId) || conditions[0];
+  const instructionText = condition[2] || set.instruction;
+  const instructionHeader = element("div", "task-instruction-header");
+  instructionHeader.append(element("span", "task-instruction-label", "Instruction"));
+  if (conditions.length > 1) {
+    const choices = element("div", "task-condition-list");
+    choices.setAttribute("role", "group");
+    choices.setAttribute("aria-label", "Demo condition");
+    choices.append(element("span", "task-condition-label", "Condition"));
+    conditions.forEach(([id, label]) => {
+      const button = element("button", "", label);
+      button.type = "button";
+      button.dataset.taskControl = `condition-${id}`;
+      button.setAttribute("aria-pressed", String(id === condition[0]));
+      button.addEventListener("click", () => {
+        selectedConditions.set(conditionKey, id);
+        renderTaskDetail(`condition-${id}`);
+      });
+      choices.append(button);
+    });
+    instructionHeader.append(choices);
+  }
+  const grid = element("div", "task-demo-grid");
+  for (const outcome of ["success", "failure"]) {
+    const label = outcome === "success" ? "Success" : "Failure";
+    const card = element("figure", `task-demo-card ${outcome}`);
+    const caption = element("figcaption", "task-demo-caption");
+    caption.append(element("span", "task-outcome", label));
+    const media = element("div", "task-demo-media");
+    if (set.unavailable?.includes(`${condition[0]}/${outcome}`)) {
+      media.append(element("p", "task-video-error", `${label} demo coming soon.`));
+      card.append(caption, media);
+      grid.append(card);
+      continue;
+    }
+    const path = `assets/demos/${taskDomain}/${set.folder}/${condition[0]}/${outcome}`;
+    const video = element("video", "task-demo-video");
+    video.muted = true;
+    video.defaultMuted = true;
+    video.loop = false;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.poster = `${path}/poster.webp`;
+    video.src = `${path}/demo.mp4`;
+    video.width = 480;
+    video.height = 270;
+    video.setAttribute("aria-label", `${taskDomain === "real" ? "Real-world" : "Simulation"}, ${task.name}, ${condition[1]}, ${label.toLowerCase()} example`);
+    video.addEventListener("ended", syncDemoPlayback);
+    video.addEventListener("error", () => {
+      visibleDemos.delete(video);
+      const message = element("p", "task-video-error", "This demo is currently unavailable.");
+      media.replaceChildren(message);
+    }, { once: true });
+    const replay = element("button", "task-demo-replay");
+    replay.append(element("span", "", "↻ Replay"));
+    replay.hidden = true;
+    replay.dataset.outcome = outcome;
+    replay.type = "button";
+    replay.setAttribute("aria-label", `Replay ${label.toLowerCase()} example`);
+    replay.addEventListener("click", () => {
+      video.currentTime = 0;
+      video.dataset.manualPlay = "true";
+      syncDemoPlayback();
+    });
+    media.append(video, replay);
+    card.append(caption, media);
+    grid.append(card);
+  }
+  if (instructionText || conditions.length > 1) {
+    const instruction = element("div", "task-instruction");
+    const copy = element("p", "task-instruction-copy");
+    copy.append(element("span", "", instructionText || ""));
+    // Overlapping, hidden copies reserve the longest instruction at this width,
+    // including real-world overrides and condition-specific instructions.
+    const instructions = new Set();
+    Object.values(config.taskDemos || {}).forEach((demo) => {
+      const variants = [demo];
+      if (demo.real && typeof demo.real === "object") variants.push({ ...demo, ...demo.real });
+      variants.forEach((variant) => {
+        if (variant.instruction) instructions.add(variant.instruction);
+        (variant.conditions || []).forEach(([, , text]) => {
+          if (text) instructions.add(text);
+        });
+      });
+    });
+    instructions.forEach((text) => {
+      const measure = element("span", "task-instruction-measure", text);
+      measure.setAttribute("aria-hidden", "true");
+      copy.append(measure);
+    });
+    instruction.append(instructionHeader, copy);
+    body.append(instruction);
+  }
+  body.append(grid);
+  detail.append(body);
+  demoObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) visibleDemos.add(entry.target);
+      else visibleDemos.delete(entry.target);
+    }
+    syncDemoPlayback();
+  }, { threshold: 0.15 });
+  grid.querySelectorAll("video").forEach((video) => demoObserver.observe(video));
+  syncDemoPlayback();
+}
+
+function renderTaskFigure(task, detail) {
+  const frame = element("div", "task-image");
+  const img = element("img");
+  img.loading = "lazy";
+  img.src = `assets/tasks/${task.image.replace(".png", ".webp")}`;
+  img.alt = `${task.name}: sequential robot, wrist-camera, and tactile observations`;
+  img.width = 1200;
+  frame.append(img);
+  detail.append(frame);
+  if (task.extra) {
+    const extra = element("details", "task-extra");
+    extra.append(element("summary", "", task.extraLabel));
+    const extraImage = element("img");
+    extraImage.src = `assets/tasks/${task.extra.replace(".png", ".webp")}`;
+    extraImage.alt = `${task.name}: ${task.extraLabel.toLowerCase()}`;
+    extraImage.loading = "lazy";
+    extra.append(extraImage);
+    detail.append(extra);
+  }
+}
+renderTasks();
+
+let domain = "sim";
+let expanded = false;
+function renderResults() {
+  const domainTasks =
+    domain === "sim" ? tasks : tasks.filter((task) => task.real);
+  const available = policies
+    .filter((policy) => policy[domain])
+    .sort((a, b) => b[domain].at(-1) - a[domain].at(-1));
+  const shown = expanded ? available : available.slice(0, 5);
+  const table = document.querySelector("#results-table");
+  const caption = element(
+    "caption",
+    "sr-only",
+    `${domain === "sim" ? "Simulation" : "Real-world"} policy success rates in percent`,
+  );
+  const thead = element("thead");
+  const headRow = element("tr");
+  const modelHead = element("th", "", "Policy");
+  modelHead.scope = "col";
+  headRow.append(modelHead);
+  domainTasks.forEach((task) => {
+    const th = element("th");
+    th.scope = "col";
+    const abbr = element("abbr", "", task.id);
+    abbr.title = task.name;
+    th.append(abbr);
+    headRow.append(th);
+  });
+  const avg = element("th", "", "Avg.");
+  avg.scope = "col";
+  headRow.append(avg);
+  thead.append(headRow);
+  const tbody = element("tbody");
+  shown.forEach((policy) => {
+    const row = element("tr", policy.name === "OpenVTLA" ? "ours" : "");
+    const heading = element("th", "", policy.name);
+    heading.scope = "row";
+    heading.append(element("span", "policy-family", policy.family));
+    row.append(heading);
+    policy[domain].forEach((value, i) =>
+      row.append(
+        element(
+          "td",
+          "",
+          i === policy[domain].length - 1
+            ? value.toFixed(1)
+            : Number.isInteger(value)
+              ? String(value)
+              : value.toFixed(1),
+        ),
+      ),
+    );
+    tbody.append(row);
+  });
+  table.replaceChildren(caption, thead, tbody);
+  const button = document.querySelector("#expand-results");
+  button.textContent = expanded
+    ? "Show top 5 policies"
+    : `Show all ${available.length} policies`;
+  button.setAttribute("aria-expanded", String(expanded));
+  document
+    .querySelectorAll("[data-domain]")
+    .forEach((button) =>
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.domain === domain),
+      ),
+    );
+}
+document.querySelectorAll("[data-domain]").forEach((button) =>
+  button.addEventListener("click", () => {
+    domain = button.dataset.domain;
+    renderResults();
+  }),
+);
+document.querySelector("#expand-results").addEventListener("click", () => {
+  expanded = !expanded;
+  renderResults();
+});
+renderResults();
+
+/* Demo rendering temporarily disabled with the section in index.html.
+config.demos.forEach((demo) => {
+  const article = element("article", "demo-item");
+  const src = safeUrl(demo.src);
+  if (src) {
+    const video = element("video");
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.src = src;
+    video.setAttribute("aria-label", demo.title);
+    if (safeUrl(demo.poster)) video.poster = safeUrl(demo.poster);
+    if (safeUrl(demo.captions)) {
+      const track = element("track");
+      track.kind = "captions";
+      track.label = "English";
+      track.srclang = "en";
+      track.src = safeUrl(demo.captions);
+      video.append(track);
+    }
+    video.addEventListener("error", () => {
+      if (!article.querySelector(".video-error"))
+        article.append(
+          element(
+            "p",
+            "video-error",
+            "This video could not be loaded. Please try again later.",
+          ),
+        );
+    });
+    article.append(video);
+  } else {
+    const placeholder = element("div", "demo-media");
+    const symbol = element("span", "placeholder-symbol", "[ video ]");
+    symbol.setAttribute("aria-hidden", "true");
+    placeholder.append(symbol, element("p", "", "Demo coming soon"));
+    article.append(placeholder);
+  }
+  article.append(
+    element("h3", "", demo.title),
+    element("p", "", demo.description),
+  );
+  document.querySelector("#demo-grid").append(article);
+});
+*/
+
+let citationCopyReset;
+document
+  .querySelector("#copy-citation")
+  .addEventListener("click", async (event) => {
+    const code = document.querySelector("#bibtex");
+    const button = event.currentTarget;
+    const label = button.querySelector(".copy-label");
+    clearTimeout(citationCopyReset);
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      label.textContent = "Copied";
+      document.querySelector("#copy-status").textContent =
+        "Citation copied to clipboard.";
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      label.textContent = "Citation selected";
+      document.querySelector("#copy-status").textContent =
+        "Copy unavailable. Citation selected; press Control+C or Command+C to copy.";
+    }
+    citationCopyReset = setTimeout(() => {
+      label.textContent = "Copy";
+    }, 2500);
+  });
+
+const navLinks = document.querySelectorAll(".nav-links a");
+const sectionObserver = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        navLinks.forEach((link) => {
+          if (link.hash === `#${entry.target.id}`)
+            link.setAttribute("aria-current", "location");
+          else link.removeAttribute("aria-current");
+        });
+      }
+    });
+  },
+  { rootMargin: "-15% 0px -60% 0px" },
+);
+navLinks.forEach((link) => {
+  const section = document.querySelector(link.hash);
+  if (section) sectionObserver.observe(section);
+});
