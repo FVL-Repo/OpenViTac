@@ -11,7 +11,7 @@ import pickle
 from pathlib import Path
 
 
-# Tension strap geometry
+# Tetrahedral geometry
 
 def tetra_faces(tets):
     faces = np.concatenate([tets[:, [0, 2, 1]], tets[:, [0, 1, 3]],
@@ -214,7 +214,7 @@ def set_actor_visible(stage, actor, visible):
             imageable.MakeInvisible()
 
 
-# Bulb grasp control
+# Grasp control
 
 def next_grip_qpos(depths_mm, current_qpos, target_depth_mm=27.2,
                    minimum_step_m=5e-6, maximum_step_m=1e-4):
@@ -353,15 +353,27 @@ PHYSICS_HZ = 120
 
 POLICY_HZ = 60
 
-def configure_final_task(cfg, parameters, *, max_policy_seconds):
-    if not math.isclose(float(cfg.sim.dt), 1.0 / PHYSICS_HZ, abs_tol=1e-12):
-        raise ValueError('Final tasks require120Hz physics and60Hz policy timing')
+def configure_final_task(
+    cfg, parameters, *, max_policy_seconds,
+    physics_hz=PHYSICS_HZ, action_repeat=ACTION_REPEAT,
+):
+    if (isinstance(physics_hz, bool) or not isinstance(physics_hz, int)
+            or physics_hz < 1):
+        raise ValueError('physics_hz must be a positive integer')
+    if (isinstance(action_repeat, bool) or not isinstance(action_repeat, int)
+            or action_repeat < 1):
+        raise ValueError('action_repeat must be a positive integer')
+    policy_hz = physics_hz / action_repeat
+    if not math.isclose(policy_hz, POLICY_HZ, abs_tol=1e-12):
+        raise ValueError('Final tasks require60Hz policy timing')
+    if not math.isclose(float(cfg.sim.dt), 1.0 / physics_hz, abs_tol=1e-12):
+        raise ValueError(f'Final task requires{physics_hz}Hz physics timing')
     cfg.decimation = 1
-    cfg.save_frequency = ACTION_REPEAT
-    cfg.render_frequency = ACTION_REPEAT
-    cfg.video_frequency = ACTION_REPEAT
+    cfg.save_frequency = action_repeat
+    cfg.render_frequency = action_repeat
+    cfg.video_frequency = action_repeat
     cfg.uniform_policy_recording = True
-    cfg.policy_action_repeat = ACTION_REPEAT
+    cfg.policy_action_repeat = action_repeat
     cfg.final_acceptance_contract = True
     # Observations remain compatible with Insert_USB; actual commands are a
     # separate audit sidecar because observed qpos is not the issued target.
@@ -378,7 +390,7 @@ def configure_final_task(cfg, parameters, *, max_policy_seconds):
     cfg.reuse_same_step_tactile_depth = bool(parameters.get("reuse_same_step_tactile_depth", False))
     cfg.eval_start_delay_steps = 0
     cfg.final_policy_timeout_seconds = float(max_policy_seconds)
-    cfg.step_lim = int(round(max_policy_seconds * POLICY_HZ))
+    cfg.step_lim = int(round(max_policy_seconds * policy_hz))
     cfg.max_save_frames = max(int(cfg.max_save_frames), cfg.step_lim + 1200)
 
 def execute_joint_target(task, arm=None, gripper=None, *, ticks=ACTION_REPEAT):
@@ -469,19 +481,6 @@ def tracked_flow_rgb_features(reference,current,tracker):
     return np.r_[flow,np.asarray(shape,float)],details
 
 
-# Force task parameters
-
-def sample_physics(task, seed):
-    rng=np.random.default_rng(int(seed))
-    if task=='tension_strap':
-        return {'modulus_mpa':float(rng.uniform(.25,.40))}
-    if task=='bulb_tightening':
-        return {'initial_depth_m':float(rng.uniform(.019,.021)),
-                'seat_top_m':float(rng.uniform(.021,.0226)),
-                'seat_modulus_mpa':float(rng.uniform(.08,.20))}
-    raise ValueError(f'Unknown force task: {task}')
-
-
 # Force task probe
 
 def configure_gel(tactiles, parameters):
@@ -541,69 +540,6 @@ def _rounded_box(stage, path, center, size, radius, mat):
     _bind(mesh.GetPrim(),mat)
     return mesh
 
-class ForceTaskScene:
-    def __init__(self,task,kind):
-        from pxr import Sdf, Usd, UsdGeom, UsdShade
-        self.task=task
-        import omni.usd
-        stage=omni.usd.get_context().get_stage()
-        for env_path in task.scene.env_prim_paths:
-            root=env_path+'/force_task_presentation'
-            UsdGeom.Xform.Define(stage,root)
-            metal=_material(stage,root+'/Looks/Metal',
-                            (.46,.49,.53) if kind=='strap' else (.33,.38,.42),
-                            .48 if kind=='strap' else .28, .65 if kind=='strap' else .8)
-            edge=_material(stage,root+'/Looks/DarkMetal',
-                           (.055,.060,.068) if kind=='strap' else (.06,.085,.10),
-                           .75 if kind=='strap' else .42, .15 if kind=='strap' else .55)
-            rubber=_material(stage,root+'/Looks/Elastomer',
-                             (.035,.12,.36) if kind=='strap' else (.025,.38,.32),
-                             .78 if kind=='strap' else .56)
-            grip=_material(stage,root+'/Looks/Grip',(.045,.15,.145),.67)
-            # Both tasks inherit the base table and environment used by the chip task.
-            if kind=='strap':
-                _rounded_box(stage,root+'/anchor_base',(.55,0.,.006),(.096,.082,.010),.009,metal)
-                for side in [-1,1]:
-                    _rounded_box(stage,root+('/anchor_jaw_front' if side<0 else '/anchor_jaw_back'),(.55,side*.025,.020),
-                                 (.057,.014,.024),.003,edge)
-                for i,(x,y) in enumerate([(-.035,-.028),(.035,-.028),(-.035,.028),(.035,.028)]):
-                    _cylinder(stage,root+f'/bolt_{i}',(.55+x,y,.012),.004,.004,edge)
-                    _rounded_box(stage,root+f'/bolt_slot_{i}',(.55+x,y,.0141),
-                                 (.0047,.0011,.0003),.0002,metal)
-                actor=stage.GetPrimAtPath(env_path+'/elastic_strap')
-                if actor.IsValid():
-                    for prim in Usd.PrimRange(actor):
-                        if prim.IsA(UsdGeom.Mesh):
-                            mesh=UsdGeom.Mesh(prim)
-                            _bind(prim,rubber)
-                            if task.params.get('geometry') == 'bundle':
-                                self.color_strap(mesh)
-                                reader=UsdShade.Shader.Define(stage,root+'/Looks/Elastomer/Color')
-                                reader.CreateIdAttr('UsdPrimvarReader_float3')
-                                reader.CreateInput('varname',Sdf.ValueTypeNames.Token).Set('displayColor')
-                                reader.CreateOutput('result',Sdf.ValueTypeNames.Float3)
-                                shader=UsdShade.Shader(stage.GetPrimAtPath(root+'/Looks/Elastomer/Shader'))
-                                shader.GetInput('diffuseColor').ConnectToSource(reader.ConnectableAPI(),'result')
-            else:
-                _rounded_box(stage,root+'/socket_mount',(.55,0.,.001),(.125,.125,.002),.014,metal)
-
-
-    def color_strap(self, mesh, rest_points=None):
-        from pxr import Vt
-        task=self.task
-        points=(np.asarray(mesh.GetPointsAttr().Get(),dtype=float)
-                if rest_points is None else np.asarray(rest_points))
-        faces=np.asarray(mesh.GetFaceVertexIndicesAttr().Get(),dtype=int).reshape(-1,3)
-        centers=points[faces].mean(axis=1)-task.base
-        palette=np.asarray([[50,126,207],[253,230,64],[253,77,54],[55,58,62]],dtype=float)/255.
-        palette=np.where(palette<=.04045,palette/12.92,((palette+.055)/1.055)**2.4)
-        which=np.full(len(faces),3,dtype=int)
-        band=(centers[:,2]>.01601)&(centers[:,2]<.13199)
-        band_centers=np.asarray(task.params.get('band_centers_m',[-.031,0.,.031]))
-        which[band]=np.abs(centers[band,0,None]-band_centers[None,:]).argmin(axis=1)
-        mesh.CreateDisplayColorAttr(Vt.Vec3fArray.FromNumpy(palette[which].astype(np.float32)))
-        mesh.GetDisplayColorPrimvar().SetInterpolation('uniform')
-
 
 # Force task tracking
 
@@ -654,7 +590,7 @@ class MarkerFlowTracker:
         return np.asarray(values,float),details
 
 
-# Tension strap geometry
+# Tetrahedral geometry
 
 class ElasticResultant:
     """Exact gradient of the installed StableNeoHookean energy in metres/Pascals."""
@@ -695,14 +631,21 @@ class ElasticResultant:
 
 # Final task contract
 
-FINAL_TASKS = frozenset(("grasp_fragile_chip","bulb_tightening","tension_strap","wipe_vase"))
+FINAL_TASK_ACTION_REPEATS = {
+    "grasp_chip": 1,
+}
+
+FINAL_TASKS = frozenset(FINAL_TASK_ACTION_REPEATS)
 
 def resolve_policy_action_repeat(task_name, training_config):
-    repeat=training_config.get("action_repeat", ACTION_REPEAT if task_name in FINAL_TASKS else 1)
+    expected = FINAL_TASK_ACTION_REPEATS.get(task_name)
+    repeat=training_config.get("action_repeat", expected if expected is not None else 1)
     if isinstance(repeat,bool) or not isinstance(repeat,int) or repeat<1:
         raise ValueError("Policy action_repeat must be a positive integer")
-    if task_name in FINAL_TASKS and repeat!=ACTION_REPEAT:
-        raise ValueError("FinalAcceptance tasks use 60Hz data and action_repeat=2; an older checkpoint cadence requires separate validation")
+    if expected is not None and repeat!=expected:
+        raise ValueError(
+            f"{task_name} uses 60Hz policy timing and action_repeat={expected}"
+        )
     return repeat
 
 def timing_context(task):
@@ -817,7 +760,6 @@ def original_action_schedule(steps,joints,start,command_path,*,terminal_step=Non
         uses_feedback_corrections=False)
 
 
-
 def take_force_task_action(task, action, *, action_type="qpos", force=True,
                            joint_velocity=None, action_repeat=None):
     """Execute a force-task decision without changing the legacy action path."""
@@ -881,7 +823,7 @@ def prepare_force_task_config(cfg, config, config_path, *, seed):
     if parameters.get("cache_actor_surfaces") or parameters.get("reuse_same_step_tactile_depth"):
         raise ValueError("Surface/tactile caches are not enabled in this migration")
     if config.get("sensor_type", "gsmini") != "gsmini":
-        raise ValueError("The four force-task configurations currently require gsmini")
+        raise ValueError("The grasp_chip configuration requires gsmini")
     # TacEx calls Task.seed during construction if cfg.seed is non-None.
     # Task.seed needs scene objects; defer it until the explicit reset(seed).
     cfg.seed = None
@@ -904,8 +846,9 @@ def force_task_openpi_repeat(deploy_config):
         return None
     config = deploy_config.get("openpi", {})
     if str(config.get("control_mode", "abs_joint")).lower() not in ("abs_joint", "relative_joint", "delta_joint"):
-        raise ValueError("The four force tasks require OpenPI joint control")
-    repeat = config.get("action_repeat", deploy_config.get("eval_action_repeat", ACTION_REPEAT))
+        raise ValueError("grasp_chip requires OpenPI joint control")
+    expected = FINAL_TASK_ACTION_REPEATS[deploy_config["task_name"]]
+    repeat = config.get("action_repeat", deploy_config.get("eval_action_repeat", expected))
     for value in (repeat, deploy_config.get("eval_action_repeat", repeat)):
         resolve_policy_action_repeat(deploy_config["task_name"], {"action_repeat": value})
     return repeat
@@ -922,7 +865,7 @@ def _force_json(path, data):
 def dispatch_force_task_seeds(mode, args, *, config=None, config_path=None):
     """Run each physical seed in a fresh invocation of the existing entry point.
 
-    Only the four named tasks enter this path. A result file plus clean exit is
+    Only grasp_chip enters this path. A result file plus clean exit is
     required; a crashed worker is never counted as a physical policy failure.
     """
     import fcntl
@@ -949,7 +892,7 @@ def dispatch_force_task_seeds(mode, args, *, config=None, config_path=None):
         if deploy.get("policy_name") == "openpi":
             force_task_openpi_repeat({**deploy, "task_name": name})
         if args.tactile_sensor not in (None, "gelsight", "gsmini"):
-            raise ValueError("The four task profiles require GSmini")
+            raise ValueError("The grasp_chip profile requires GSmini")
     # Validate local paths and profile before launching Isaac or connecting to Pi05.
     from types import SimpleNamespace
     prepare_force_task_config(SimpleNamespace(save_dir=repo / "data"),

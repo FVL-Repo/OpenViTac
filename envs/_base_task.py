@@ -267,8 +267,6 @@ class BaseTaskCfg(DirectRLEnvCfg):
     xense_half_cylinder_adaptive_grasp_depth_threshold: float | None = 25.8
     xense_insert_half_cylinder_adaptive_grasp_depth_threshold: float | None = 25.8
     xense_cube_adaptive_grasp_depth_threshold: float | None = 26.0
-    xense_cup_adaptive_grasp_depth_threshold: float | None = 26.6
-    xense_pour_cup_adaptive_grasp_depth_threshold: float | None = 26.6
     xense_drawer_adaptive_grasp_depth_threshold: float | None = 26.0
     xense_gear_adaptive_grasp_depth_threshold: float | None = 26.0
     # Optional per-task Xense contact stop policies.  If unset, each close uses
@@ -278,8 +276,6 @@ class BaseTaskCfg(DirectRLEnvCfg):
     xense_half_cylinder_adaptive_grasp_require_both_contacts: bool | None = None
     xense_insert_half_cylinder_adaptive_grasp_require_both_contacts: bool | None = None
     xense_cube_adaptive_grasp_require_both_contacts: bool | None = None
-    xense_cup_adaptive_grasp_require_both_contacts: bool | None = False
-    xense_pour_cup_adaptive_grasp_require_both_contacts: bool | None = None
     xense_drawer_adaptive_grasp_require_both_contacts: bool | None = None
     xense_gear_adaptive_grasp_require_both_contacts: bool | None = None
     # Xense-specific grasp tuning. These are ignored by GelSight/Neote branches.
@@ -287,10 +283,6 @@ class BaseTaskCfg(DirectRLEnvCfg):
     xense_half_cylinder_close_percent: float = 0.185
     xense_insert_half_cylinder_close_percent: float = 0.185
     xense_cube_close_percent: float = 0.30
-    xense_cup_close_percent: float = 0.76
-    xense_cup_min_principal_ratio: float = 0.90
-    xense_cup_max_nonrigid_error: float = 0.08
-    xense_pour_cup_close_percent: float = 0.86
     xense_pour_ball_friction_ratio: float = 0.05
     xense_pour_grip_friction_ratio: float = 4.0
     xense_pour_wrist_angle_deg: float = 100.0
@@ -307,7 +299,6 @@ class BaseTaskCfg(DirectRLEnvCfg):
     xense_pour_hold_actor_during_carry: bool = False
     xense_pour_target_y_offset: float = 0.035
     xense_pour_target_z_offset: float = 0.106
-    xense_pour_cup_grasp_height_bias: float = -0.020
     xense_pour_release_lift: float = 0.0
     xense_pour_release_snap_angle_deg: float = 25.0
     xense_pour_release_snap_steps: int = 30
@@ -320,8 +311,6 @@ class BaseTaskCfg(DirectRLEnvCfg):
     xense_half_cylinder_grasp_height_bias: float = 0.010
     xense_insert_half_cylinder_grasp_height_bias: float = 0.010
     xense_cube_grasp_height_bias: float = 0.008
-    xense_cup_grasp_height_bias: float = -0.010
-    xense_pour_cup_grasp_world_x_bias: float = 0.0
     xense_drawer_grasp_z_bias: float = 0.0
     xense_half_cylinder_grasp_world_y_bias: float = 0.0
     xense_insert_half_cylinder_grasp_world_y_bias: float = 0.0
@@ -329,7 +318,6 @@ class BaseTaskCfg(DirectRLEnvCfg):
     xense_gear_grasp_world_y_bias: float = 0.0
     xense_initial_settle_steps: int = 1
     xense_half_cylinder_initial_settle_steps: int = 1
-    xense_cup_initial_settle_steps: int = 1
     xense_pour_initial_settle_steps: int = 1
     xense_drawer_initial_settle_steps: int = 1
     xense_insert_half_cylinder_initial_settle_steps: int = 1
@@ -500,6 +488,10 @@ class BaseTask(UipcRLEnv):
             cfg.adaptive_grasp_depth_threshold = cfg.robot.adaptive_grasp_depth_threshold
         return cfg
  
+    def _write_video_observation(self, observation):
+        """Write task observations with the existing composite video recorder."""
+        self.video_handler.write(self.get_frame_shot(observation))
+
     def _setup_save(self):
         if self.cfg.save_dir == "auto":
             module_name = self.__class__.__module__

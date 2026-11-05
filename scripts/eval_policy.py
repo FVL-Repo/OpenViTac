@@ -111,45 +111,6 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--target_cup",
-    type=str,
-    default=None,
-    help="Override env_cfg.target_cup when the selected task supports it.",
-)
-parser.add_argument(
-    "--reference_cup",
-    type=str,
-    default=None,
-    help="Override env_cfg.reference_cup when the selected task supports it.",
-)
-parser.add_argument(
-    "--placement_side",
-    type=str,
-    default=None,
-    help="Override env_cfg.placement_side when the selected task supports it.",
-)
-parser.add_argument(
-    "--cup_base_pose_indices",
-    type=str,
-    default=None,
-    help=(
-        "Override env_cfg.cup_base_pose_indices when supported. "
-        "Accepts comma-separated values such as 0,1,2 or a YAML/JSON list in the config."
-    ),
-)
-parser.add_argument(
-    "--target_area",
-    type=str,
-    default=None,
-    help="Override env_cfg.target_area when the selected task supports it.",
-)
-parser.add_argument(
-    "--frame_order",
-    type=str,
-    default=None,
-    help="Override env_cfg.frame_order when the selected task supports it.",
-)
-parser.add_argument(
     "--rough_block_side",
     type=str,
     default=None,
@@ -193,7 +154,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--max_policy_actions", type=int, default=None,
-    help="Four-task chain smoke test: cap policy decisions; not a benchmark score.",
+    help="Chip chain smoke test: cap policy decisions; not a benchmark score.",
 )
 AppLauncher.add_app_launcher_args(parser)
 
@@ -201,12 +162,6 @@ ENV_CFG_OVERRIDE_KEYS = (
     "background",
     "target_block",
     "block_base_pose_indices",
-    "target_cup",
-    "reference_cup",
-    "placement_side",
-    "cup_base_pose_indices",
-    "target_area",
-    "frame_order",
     "rough_block_side",
     "initial_grasp_side",
     "weight_label",
@@ -216,7 +171,6 @@ ENV_CFG_OVERRIDE_KEYS = (
 )
 INT_TUPLE_ENV_CFG_KEYS = {
     "block_base_pose_indices",
-    "cup_base_pose_indices",
 }
 
 
@@ -319,10 +273,10 @@ elif args_cli.livestream is None or args_cli.livestream < 0:
 args_cli.num_envs = 1
 
 # launch omniverse app, must done before importing anything from omni.isaac
-is_force_task = args_cli.task_name in ("grasp_fragile_chip", "bulb_tightening", "tension_strap", "wipe_vase")
+is_force_task = args_cli.task_name in ("grasp_chip",)
 if args_cli.max_policy_actions is not None:
     if not is_force_task or args_cli.max_policy_actions < 1:
-        raise ValueError("--max_policy_actions requires a four-task profile and a positive action budget")
+        raise ValueError("--max_policy_actions requires the grasp_chip profile and a positive action budget")
 if is_force_task:
     from envs._force_task_utils import (
         dispatch_force_task_seeds, launch_force_task_app,
@@ -658,10 +612,6 @@ def main():
         "xense_half_cylinder_close_percent": float,
         "xense_insert_half_cylinder_close_percent": float,
         "xense_cube_close_percent": float,
-        "xense_cup_close_percent": float,
-        "xense_cup_min_principal_ratio": float,
-        "xense_cup_max_nonrigid_error": float,
-        "xense_pour_cup_close_percent": float,
         "xense_pour_ball_friction_ratio": float,
         "xense_pour_grip_friction_ratio": float,
         "xense_pour_wrist_angle_deg": float,
@@ -690,16 +640,12 @@ def main():
         "xense_half_cylinder_grasp_height_bias": float,
         "xense_insert_half_cylinder_grasp_height_bias": float,
         "xense_cube_grasp_height_bias": float,
-        "xense_cup_grasp_height_bias": float,
-        "xense_pour_cup_grasp_height_bias": float,
-        "xense_pour_cup_grasp_world_x_bias": float,
         "xense_drawer_grasp_z_bias": float,
         "xense_half_cylinder_grasp_world_y_bias": float,
         "xense_insert_half_cylinder_grasp_world_y_bias": float,
         "xense_cube_grasp_world_y_bias": float,
         "xense_initial_settle_steps": int,
         "xense_half_cylinder_initial_settle_steps": int,
-        "xense_cup_initial_settle_steps": int,
         "xense_pour_initial_settle_steps": int,
         "xense_drawer_initial_settle_steps": int,
         "xense_insert_half_cylinder_initial_settle_steps": int,
@@ -723,16 +669,12 @@ def main():
         "xense_half_cylinder_adaptive_grasp_require_both_contacts": bool,
         "xense_insert_half_cylinder_adaptive_grasp_require_both_contacts": bool,
         "xense_cube_adaptive_grasp_require_both_contacts": bool,
-        "xense_cup_adaptive_grasp_require_both_contacts": bool,
-        "xense_pour_cup_adaptive_grasp_require_both_contacts": bool,
         "xense_drawer_adaptive_grasp_require_both_contacts": bool,
         "xense_gear_adaptive_grasp_require_both_contacts": bool,
         "xense_usb_adaptive_grasp_depth_threshold": float,
         "xense_half_cylinder_adaptive_grasp_depth_threshold": float,
         "xense_insert_half_cylinder_adaptive_grasp_depth_threshold": float,
         "xense_cube_adaptive_grasp_depth_threshold": float,
-        "xense_cup_adaptive_grasp_depth_threshold": float,
-        "xense_pour_cup_adaptive_grasp_depth_threshold": float,
         "xense_drawer_adaptive_grasp_depth_threshold": float,
         "xense_gear_adaptive_grasp_depth_threshold": float,
     }

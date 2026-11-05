@@ -174,5 +174,5 @@ ${uv_exe} pip install transforms3d trimesh tetgen
 echo "Installation completed successfully!"
 if [ "${RUN_SMOKE_TESTS}" = "1" ]; then
     echo "Trying to collect data for grasp classification demo."
-    bash collect_data.sh grasp_classify demo 0
+    bash collect_data.sh insert_USB gelsight 0
 fi

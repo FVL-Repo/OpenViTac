@@ -160,5 +160,5 @@ pip install -e source/tacex_uipc -v
 **3.** Verify that the `tacex_uipc` works by running a data collection example:
 
 ```bash
-bash collect_data.sh grasp_classify demo 0
+bash collect_data.sh insert_USB gelsight 0
 ```

@@ -498,7 +498,7 @@ def force_task_context(h5_file):
     except (ValueError, TypeError):
         return None
     if isinstance(context, dict) and context.get("task") in {
-            "grasp_fragile_chip", "bulb_tightening", "tension_strap", "wipe_vase"}:
+            "grasp_chip",}:
         return context
     return None
 

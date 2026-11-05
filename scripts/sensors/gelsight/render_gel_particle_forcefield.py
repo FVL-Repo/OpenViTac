@@ -5,7 +5,7 @@ Right = the force_field normal-force heatmap + shear-vector arrows, so motion<->
 """
 import sys, h5py, numpy as np, cv2
 
-H5  = sys.argv[1] if len(sys.argv) > 1 else "data_force/lift_can/lift_can_force169/hdf5/0.hdf5"
+H5  = sys.argv[1] if len(sys.argv) > 1 else "data_force/insert_USB/neote_force_field/hdf5/0.hdf5"
 GEL = sys.argv[2] if len(sys.argv) > 2 else "left_tactile"
 OUT = sys.argv[3] if len(sys.argv) > 3 else "/tmp/gel_particle_v2.mp4"
 

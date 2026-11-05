@@ -67,45 +67,6 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--target_cup",
-    type=str,
-    default=None,
-    help="Override env_cfg.target_cup when the selected task supports it.",
-)
-parser.add_argument(
-    "--reference_cup",
-    type=str,
-    default=None,
-    help="Override env_cfg.reference_cup when the selected task supports it.",
-)
-parser.add_argument(
-    "--placement_side",
-    type=str,
-    default=None,
-    help="Override env_cfg.placement_side when the selected task supports it.",
-)
-parser.add_argument(
-    "--cup_base_pose_indices",
-    type=str,
-    default=None,
-    help=(
-        "Override env_cfg.cup_base_pose_indices when supported. "
-        "Accepts comma-separated values such as 0,1,2 or a YAML/JSON list in the config."
-    ),
-)
-parser.add_argument(
-    "--target_area",
-    type=str,
-    default=None,
-    help="Override env_cfg.target_area when the selected task supports it.",
-)
-parser.add_argument(
-    "--frame_order",
-    type=str,
-    default=None,
-    help="Override env_cfg.frame_order when the selected task supports it.",
-)
-parser.add_argument(
     "--rough_block_side",
     type=str,
     default=None,
@@ -205,7 +166,7 @@ task_config, task_config_file = get_config(
 if task_config.get('render_frequency', 1) == 0:
     args_cli.livestream = 2
 
-is_force_task = args_cli.task in ("grasp_fragile_chip", "bulb_tightening", "tension_strap", "wipe_vase")
+is_force_task = args_cli.task in ("grasp_chip",)
 if is_force_task:
     from envs._force_task_utils import (
         dispatch_force_task_seeds, launch_force_task_app,
@@ -338,11 +299,6 @@ def main():
             env_cfg.block_base_pose_indices = pose_indices
             task_config["block_base_pose_indices"] = list(pose_indices)
     for key in (
-        "target_cup",
-        "reference_cup",
-        "placement_side",
-        "target_area",
-        "frame_order",
         "rough_block_side",
         "initial_grasp_side",
         "weight_label",
@@ -357,14 +313,6 @@ def main():
             if value is not None:
                 setattr(env_cfg, key, str(value))
                 task_config[key] = str(value)
-    if hasattr(env_cfg, "cup_base_pose_indices"):
-        pose_indices = args_cli.cup_base_pose_indices
-        if pose_indices is None:
-            pose_indices = task_config.get("cup_base_pose_indices", None)
-        pose_indices = parse_int_tuple(pose_indices, "cup_base_pose_indices")
-        if pose_indices is not None:
-            env_cfg.cup_base_pose_indices = pose_indices
-            task_config["cup_base_pose_indices"] = list(pose_indices)
     env_cfg.tactile_sensor_type = task_config.get('sensor_type', 'gsmini')
     env_cfg.dense_gelpad = bool(task_config.get('dense_gelpad', env_cfg.dense_gelpad))
     env_cfg.force_field_grid = tuple(task_config.get('force_field_grid', env_cfg.force_field_grid))
@@ -405,10 +353,6 @@ def main():
         "xense_half_cylinder_close_percent": float,
         "xense_insert_half_cylinder_close_percent": float,
         "xense_cube_close_percent": float,
-        "xense_cup_close_percent": float,
-        "xense_cup_min_principal_ratio": float,
-        "xense_cup_max_nonrigid_error": float,
-        "xense_pour_cup_close_percent": float,
         "xense_pour_ball_friction_ratio": float,
         "xense_pour_grip_friction_ratio": float,
         "xense_pour_wrist_angle_deg": float,
@@ -437,16 +381,12 @@ def main():
         "xense_half_cylinder_grasp_height_bias": float,
         "xense_insert_half_cylinder_grasp_height_bias": float,
         "xense_cube_grasp_height_bias": float,
-        "xense_cup_grasp_height_bias": float,
-        "xense_pour_cup_grasp_height_bias": float,
-        "xense_pour_cup_grasp_world_x_bias": float,
         "xense_drawer_grasp_z_bias": float,
         "xense_half_cylinder_grasp_world_y_bias": float,
         "xense_insert_half_cylinder_grasp_world_y_bias": float,
         "xense_cube_grasp_world_y_bias": float,
         "xense_initial_settle_steps": int,
         "xense_half_cylinder_initial_settle_steps": int,
-        "xense_cup_initial_settle_steps": int,
         "xense_pour_initial_settle_steps": int,
         "xense_drawer_initial_settle_steps": int,
         "xense_insert_half_cylinder_initial_settle_steps": int,
@@ -470,16 +410,12 @@ def main():
         "xense_half_cylinder_adaptive_grasp_require_both_contacts": bool,
         "xense_insert_half_cylinder_adaptive_grasp_require_both_contacts": bool,
         "xense_cube_adaptive_grasp_require_both_contacts": bool,
-        "xense_cup_adaptive_grasp_require_both_contacts": bool,
-        "xense_pour_cup_adaptive_grasp_require_both_contacts": bool,
         "xense_drawer_adaptive_grasp_require_both_contacts": bool,
         "xense_gear_adaptive_grasp_require_both_contacts": bool,
         "xense_usb_adaptive_grasp_depth_threshold": float,
         "xense_half_cylinder_adaptive_grasp_depth_threshold": float,
         "xense_insert_half_cylinder_adaptive_grasp_depth_threshold": float,
         "xense_cube_adaptive_grasp_depth_threshold": float,
-        "xense_cup_adaptive_grasp_depth_threshold": float,
-        "xense_pour_cup_adaptive_grasp_depth_threshold": float,
         "xense_drawer_adaptive_grasp_depth_threshold": float,
         "xense_gear_adaptive_grasp_depth_threshold": float,
     }

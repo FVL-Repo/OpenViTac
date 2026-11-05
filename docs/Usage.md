@@ -63,7 +63,7 @@ root:
 CONDA_ENV=OpenViTac \
 GPU=0 \
 MODALITIES=gelsight \
-TASKS=grasp_in_clutter \
+TASKS=insert_USB \
 START_SEED=0 \
 MAX_SEED=0 \
 EPISODE_NUM=1 \
@@ -72,18 +72,22 @@ bash bash_scripts/collect_data.sh
 
 ## Task Suite
 
-The published benchmark comprises 11 simulation tasks across four capability groups; see the [benchmark overview](../README.md#benchmark). The eight tasks below are the existing default collection-script suite, which also includes additional manipulation scenarios. Task logic lives in `envs/`, while task assets are stored in `assets/objects/task_assets/`.
+The benchmark comprises 11 simulation tasks across four capability groups. The two insert-block variants share `envs/insert_block.py` and use the `insert_block` identifier with their respective experiment conditions.
 
-| Task module | Category | Objective |
+| Task identifier | Capability | Objective |
 |---|---|---|
-| `grasp_in_clutter` | Grasping | Find and grasp a target half-cylinder among distractors |
-| `insert_block` | Insertion | Grasp a half-cylinder and insert it into the matching opening |
-| `insert_USB` | Precision insertion | Grasp and insert a USB connector into a target slot |
-| `place_cube_on_colored_area` | Pick and place | Move a wooden cube onto a marked target region |
-| `pour_ball_to_cup` | Non-rigid/contact-rich | Grasp a cup, carry it, and pour balls into another cup |
-| `pull_drawer` | Articulated manipulation | Grasp a handle and pull the drawer open |
-| `move_cup` | Rearrangement | Reorder cups while maintaining stable tactile contact |
-| `turn_gear_pair` | Rotational manipulation | Grasp and rotate a gear pair to the target state |
+| `weight_classification` | Property perception | Classify a block by weight |
+| `hardness_classification` | Property perception | Classify a block by hardness |
+| `roughness_classification` | Property perception | Classify a block by surface roughness |
+| `roughness_guided_regrasp` | Property perception | Find and regrasp the rough block |
+| `empty_can_selection` | Property perception | Find the empty can and place it in the basket |
+| `grasp_chip` | Fragility-aware | Pick and place a chip without breaking it |
+| `gear_assembly` | Contact-rich | Assemble and rotate the gear pair |
+| `pull_drawer` | Contact-rich | Grasp a handle and pull the drawer open |
+| `insert_USB` | Precision | Insert a USB connector into its slot |
+| `insert_block` (v1 and v2) | Precision | Insert a block into the matching opening |
+
+Task-specific assets live in `assets/objects/task_assets/<task>/`. Property-perception tasks share the blocks and plates in `assets/objects/roughness_task/`. The default batch collection list contains `insert_USB`, `insert_block`, `pull_drawer`, and `gear_assembly`; select other tasks explicitly. Chip collection uses `task_config/grasp_chip.yml` and its GelSight profile.
 
 All task modules use the same reset, observation, demonstration, and policy
 interfaces. Sensor-specific contact calibration is resolved in Python, so the
@@ -109,7 +113,7 @@ The batch wrapper currently sources `/opt/conda/etc/profile.d/conda.sh`. If your
 
 `bash_scripts/collect_data.sh` reads its configuration from environment
 variables. Selected modality/task pairs run sequentially. Without `MODALITIES`
-or `TASKS` overrides, it runs the default four-modality, eight-task collection suite, not the complete paper benchmark.
+or `TASKS` overrides, it runs the default four-modality, four-task collection suite, not the complete paper benchmark.
 
 ```bash
 CONDA_ENV=<conda_env> \
@@ -128,7 +132,7 @@ Example:
 CONDA_ENV=OpenViTac \
 GPU=0 \
 MODALITIES=xense \
-TASKS=grasp_in_clutter \
+TASKS=insert_USB \
 START_SEED=0 \
 MAX_SEED=999 \
 EPISODE_NUM=100 \
@@ -137,17 +141,13 @@ bash bash_scripts/collect_data.sh
 
 Benchmark baseline task scripts:
 
-Four multi-object benchmark tasks provide dedicated baseline collection scripts
-that explicitly enumerate target/layout or target/order conditions. These
-scripts keep the original per-episode reset noise, but group outputs by semantic
-condition with `save_dir_exact` so each subset is easy to inspect and train on.
+The insert-block task provides a dedicated baseline collection script that
+enumerates target/layout conditions. It keeps the original per-episode reset
+noise and groups outputs by condition with `save_dir_exact`.
 
 | Task | Script | Default successful demonstrations |
 |---|---|---:|
 | `insert_block` | `bash_scripts/collect_insert_block_balanced.sh` | `3 targets x 4 layouts x 20 = 240` |
-| `grasp_in_clutter` | `bash_scripts/collect_grasp_in_clutter_baseline.sh` | `3 targets x 4 layouts x 20 = 240` |
-| `move_cup` | `bash_scripts/collect_move_cup_baseline.sh` | `4 semantic variants x 3 layouts x 20 = 240` |
-| `place_cube_on_colored_area` | `bash_scripts/collect_place_cube_on_colored_area_baseline.sh` | `4 target/order cases x 50 = 200` |
 
 Run one sensor modality at a time. The common commands are:
 
@@ -161,22 +161,13 @@ For example:
 
 ```bash
 MODALITY=gelsight CONFIG=task_config/gelsight.yml GPU=0 \
-bash bash_scripts/collect_grasp_in_clutter_baseline.sh
-
-MODALITY=xense CONFIG=task_config/xense.yml GPU=1 \
-bash bash_scripts/collect_move_cup_baseline.sh
-
-MODALITY=neote CONFIG=task_config/neote.yml GPU=2 \
-bash bash_scripts/collect_place_cube_on_colored_area_baseline.sh
+bash bash_scripts/collect_insert_block_balanced.sh
 ```
 
 The baseline scripts write to semantic subdirectories under `data/`:
 
 ```text
 data/insert_block/<modality>/<target>/
-data/grasp_in_clutter/<modality>/<target>/
-data/move_cup/<modality>/<target>/<side>_of_<reference>/
-data/place_cube_on_colored_area/<modality>/<target_area>/<frame_order>/
 ```
 
 Use `DRY_RUN=1` to print the planned sub-runs without launching Isaac Sim, and
@@ -186,7 +177,7 @@ Parallel collection launches one Isaac Sim application per worker:
 
 ```bash
 python scripts/parallel_collect_data.py \
-  grasp_in_clutter xense \
+  insert_USB xense \
   --workers 2 --episodes 100 --gpu 0
 ```
 

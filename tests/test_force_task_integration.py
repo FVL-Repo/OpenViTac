@@ -1,4 +1,4 @@
-"""CPU regressions for four-task integration and unchanged legacy policy behavior."""
+"""CPU regressions for chip task integration and unchanged legacy policy behavior."""
 import ast
 import copy
 import importlib.util
@@ -72,7 +72,7 @@ class Task:
         self.stop_at, self.succeed_at = stop_at, succeed_at
         self.terminal_reason = None
         self.metadata = {}
-        self.instruction = "stretch the strap"
+        self.instruction = "grasp the chip"
 
     def _step(self):
         self.step_count += 1
@@ -167,9 +167,6 @@ def test_profile_paths_and_seed_do_not_depend_on_cwd_or_environment(name, tmp_pa
         if key in params:
             assert Path(params[key]).is_file()
             assert not Path(config["task_parameters"][key]).is_absolute()
-    if name == "wipe_vase":
-        assert params["required_clean_fraction"] == .925
-        assert params["pressure_band_N"] == [7.2, 8.8]
 
 
 class Client:
@@ -201,7 +198,10 @@ def observation():
                 tactile={name: {"rgb_marker": im} for name in ("left_tactile", "right_tactile")})
 
 
-@pytest.mark.parametrize("name,repeat", [("insert_USB", None), ("tension_strap", 2), ("wipe_vase", 2)])
+@pytest.mark.parametrize("name,repeat", [
+    ("insert_USB", None),
+    ("grasp_chip", 1),
+])
 @pytest.mark.parametrize("send_tactile", [False, True])
 @pytest.mark.parametrize("control_mode", ["abs_joint", "relative_joint"])
 def test_pi05_payload_chunk_and_action_cadence(monkeypatch, name, repeat, send_tactile, control_mode):
@@ -224,13 +224,13 @@ def test_pi05_payload_chunk_and_action_cadence(monkeypatch, name, repeat, send_t
 
 
 @pytest.mark.parametrize("change", [
-    {"eval_action_repeat": 1}, {"openpi": {"action_repeat": 1}},
+    {"eval_action_repeat": 2}, {"openpi": {"action_repeat": 2}},
     {"openpi": {"action_repeat": True}}, {"openpi": {"control_mode": "delta_eef"}},
 ])
 def test_pi05_rejects_force_profile_mismatch_before_connect(monkeypatch, change):
     monkeypatch.setattr(deploy_policy, "OpenPiClientRuntime", Client)
     before = Client.connections
-    cfg = dict(task_name="bulb_tightening", openpi={"control_mode": "abs_joint"})
+    cfg = dict(task_name="grasp_chip", openpi={"control_mode": "abs_joint"})
     cfg.update(change)
     with pytest.raises(ValueError):
         deploy_policy.Policy(cfg)
@@ -254,7 +254,7 @@ def test_converter_filters_force_reveal_keeps_legacy_frames():
         f["step"] = [10, 12, 14, 16, 18, 20, 22]
         f["phase/id"] = [0, 1, 1, 1, 2, 2, 2]
         f["phase"].attrs["terminal_reason"] = "success"
-        context = dict(task="wipe_vase", timing_contract={"policy_observation_dt_s": 1 / 60})
+        context = dict(task="grasp_chip", timing_contract={"policy_observation_dt_s": 1 / 60})
         f.attrs["episode_context_json"] = json.dumps(context)
         indices = functions["episode_indices"](f, 1, 1, False, "abs_joint", 7)
         np.testing.assert_array_equal(indices, [1, 2, 3])
@@ -268,7 +268,7 @@ def test_converter_filters_force_reveal_keeps_legacy_frames():
 def test_converter_rejects_force_training_cadence_mismatch(stride, offset, mode, gripper):
     functions = converter_functions()
     with h5py.File("unused", "w", driver="core", backing_store=False) as f:
-        f.attrs["episode_context_json"] = json.dumps({"task": "wipe_vase"})
+        f.attrs["episode_context_json"] = json.dumps({"task": "grasp_chip"})
         with pytest.raises(ValueError):
             functions["episode_indices"](f, stride, offset, False, mode, gripper)
 
@@ -281,10 +281,10 @@ def test_dispatcher_is_noop_for_legacy_without_loading_config():
 def test_dispatcher_requires_valid_worker_result(tmp_path, monkeypatch, worker_result, returncode, expected):
     import subprocess
     monkeypatch.delenv("OPENVITAC_FORCE_WORKER", raising=False)
-    monkeypatch.setattr(sys, "argv", ["collect_data.py", "wipe_vase", "wipe_vase", "--gpu", "2"])
-    cfg = yaml.safe_load((ROOT / "task_config/wipe_vase.yml").read_text())
+    monkeypatch.setattr(sys, "argv", ["collect_data.py", "grasp_chip", "grasp_chip", "--gpu", "2"])
+    cfg = yaml.safe_load((ROOT / "task_config/grasp_chip.yml").read_text())
     cfg["save_dir_exact"] = str(tmp_path / "output")
-    args = NS(task="wipe_vase", start_seed=4, max_seed=4, episode_num=1, gpu="2")
+    args = NS(task="grasp_chip", start_seed=4, max_seed=4, episode_num=1, gpu="2")
     calls = []
     class Process:
         pid = 987654321
@@ -297,10 +297,10 @@ def test_dispatcher_requires_valid_worker_result(tmp_path, monkeypatch, worker_r
         def poll(self):
             return returncode
     monkeypatch.setattr(subprocess, "Popen", Process)
-    code = helpers.dispatch_force_task_seeds("collect", args, config=cfg, config_path=ROOT / "task_config/wipe_vase.yml")
+    code = helpers.dispatch_force_task_seeds("collect", args, config=cfg, config_path=ROOT / "task_config/grasp_chip.yml")
     assert code == expected
     assert len(calls) == 1 and calls[0][0][-6:] == ["--start_seed", "4", "--max_seed", "4", "--episode_num", "1"]
-    assert calls[0][0][4:8] == ["wipe_vase", "wipe_vase", "--gpu", "2"]
+    assert calls[0][0][4:8] == ["grasp_chip", "grasp_chip", "--gpu", "2"]
     state = json.loads((tmp_path / "output/force_task_progress.json").read_text())
     assert state["successes"] == int(worker_result == "success" and returncode == 0)
 
@@ -359,44 +359,14 @@ def test_video_encoder_receives_correct_fps(tmp_path, monkeypatch, fps):
     handler.ffmpeg = None
 
 
-@pytest.mark.parametrize("clean,pressure,valid", [(.925, .95, True), (.924999, .95, False), (.925, .94999, False)])
-def test_vase_validator_keeps_925_cleaning_and_95_pressure_separate(tmp_path, clean, pressure, valid):
-    from scripts.validate_final_task_episode import validate_final
-    episode = tmp_path / "hdf5/0.hdf5"
-    episode.parent.mkdir()
-    timing = dict(physics_dt_s=1 / 120, decimation=1, save_frequency=2,
-                  policy_observation_dt_s=1 / 60, policy_action_repeat=2,
-                  policy_action_dt_s=1 / 60, video_frequency=2, video_fps=60,
-                  quaternion_order="wxyz", position_units="meters", pose_frame="world",
-                  zero_velocity_targets=True)
-    meta = dict(result="success", required_clean_fraction=.925,
-                vase_wiping_parameters={"required_clean_fraction": .925}, stain_area={"ratio": 1.1},
-                vase_wiping_final=dict(failure=None, cleaned_fraction=clean, required_clean_fraction=.925,
-                    pressure_band_fraction=pressure, peak_normal_force_N=10.))
-    (tmp_path / "metadata.json").write_text(json.dumps({"0": meta}))
-    with h5py.File(episode, "w") as f:
-        f.attrs["episode_context_json"] = json.dumps(dict(task="wipe_vase", seed=0, timing_contract=timing))
-        f["step"] = [8, 12, 14, 16]
-        f["phase/id"] = [0, 1, 1, 2]
-        f["phase/sim_step"] = [8, 12, 14, 16]
-        f["phase/policy_step"] = [-1, 2, 4, 6]
-        f["phase/name"] = np.array([b"pre_move", b"policy", b"policy", b"terminal"])
-        f["phase/is_boundary"] = [1, 1, 0, 1]
-        f["phase"].attrs.update(pre_move_saved_frames=1, policy_saved_frames=2, action_saved_frames=2,
-                               terminal_saved_frames=1, policy_start_saved_index=1,
-                               policy_start_sim_step=10, save_frequency=2, terminal_reason="success")
-    report = validate_final(episode, expect="success")
-    assert report["valid"] == valid, report
-
-
 @pytest.mark.parametrize("failure", ["timeout", "invalid_json"])
 def test_dispatcher_records_infrastructure_failure(tmp_path, monkeypatch, failure):
     import subprocess
     monkeypatch.delenv("OPENVITAC_FORCE_WORKER", raising=False)
-    monkeypatch.setattr(sys, "argv", ["collect_data.py", "wipe_vase", "wipe_vase"])
-    cfg = yaml.safe_load((ROOT / "task_config/wipe_vase.yml").read_text())
+    monkeypatch.setattr(sys, "argv", ["collect_data.py", "grasp_chip", "grasp_chip"])
+    cfg = yaml.safe_load((ROOT / "task_config/grasp_chip.yml").read_text())
     cfg["save_dir_exact"] = str(tmp_path / "output")
-    args = NS(task="wipe_vase", start_seed=0, max_seed=3, episode_num=1)
+    args = NS(task="grasp_chip", start_seed=0, max_seed=3, episode_num=1)
     class Process:
         pid = 987654321
         def __init__(self, command, **kwargs):
@@ -409,7 +379,7 @@ def test_dispatcher_records_infrastructure_failure(tmp_path, monkeypatch, failur
         def poll(self):
             return 0
     monkeypatch.setattr(subprocess, "Popen", Process)
-    assert helpers.dispatch_force_task_seeds("collect", args, config=cfg, config_path=ROOT / "task_config/wipe_vase.yml") == 1
+    assert helpers.dispatch_force_task_seeds("collect", args, config=cfg, config_path=ROOT / "task_config/grasp_chip.yml") == 1
     state = json.loads((tmp_path / "output/force_task_progress.json").read_text())
     assert state["status"] == "error" and len(state["attempts"]) == 1 and state["successes"] == 0
 
@@ -417,10 +387,10 @@ def test_dispatcher_records_infrastructure_failure(tmp_path, monkeypatch, failur
 def test_dispatcher_resume_does_not_rerun_or_overwrite_completed_seed(tmp_path, monkeypatch):
     import subprocess
     monkeypatch.delenv("OPENVITAC_FORCE_WORKER", raising=False)
-    monkeypatch.setattr(sys, "argv", ["collect_data.py", "wipe_vase", "wipe_vase"])
-    cfg = yaml.safe_load((ROOT / "task_config/wipe_vase.yml").read_text())
+    monkeypatch.setattr(sys, "argv", ["collect_data.py", "grasp_chip", "grasp_chip"])
+    cfg = yaml.safe_load((ROOT / "task_config/grasp_chip.yml").read_text())
     cfg["save_dir_exact"] = str(tmp_path / "output")
-    args = NS(task="wipe_vase", start_seed=0, max_seed=3, episode_num=1)
+    args = NS(task="grasp_chip", start_seed=0, max_seed=3, episode_num=1)
     seeds = []
     class Process:
         pid = 987654321
@@ -435,7 +405,7 @@ def test_dispatcher_resume_does_not_rerun_or_overwrite_completed_seed(tmp_path, 
     monkeypatch.setattr(subprocess, "Popen", Process)
     for goal in (1, 1, 2):
         args.episode_num = goal
-        assert helpers.dispatch_force_task_seeds("collect", args, config=cfg, config_path=ROOT / "task_config/wipe_vase.yml") == 0
+        assert helpers.dispatch_force_task_seeds("collect", args, config=cfg, config_path=ROOT / "task_config/grasp_chip.yml") == 0
     assert seeds == [0, 1]
 
 

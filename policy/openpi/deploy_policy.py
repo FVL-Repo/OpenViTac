@@ -76,7 +76,7 @@ class Policy(BasePolicy):
             )
 
         self.force_task_action_repeat = None
-        if deploy_config.get("task_name") in ("grasp_fragile_chip", "bulb_tightening", "tension_strap", "wipe_vase"):
+        if deploy_config.get("task_name") in ("grasp_chip",):
             from envs._force_task_utils import force_task_openpi_repeat
             self.force_task_action_repeat = force_task_openpi_repeat(deploy_config)
 

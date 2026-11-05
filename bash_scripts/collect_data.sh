@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Collect one successful episode for every selected modality/task pair.
-# The default is 4 modalities x 8 tasks = 32 sequential runs on one GPU.
+# The default is 4 modalities x 4 tasks = 16 sequential runs on one GPU.
 # Each pair tries seeds 0-4 and stops immediately after the first success.
 # Data is written directly under ./data; only logs are grouped by run name.
 #
@@ -25,7 +25,7 @@ DRY_RUN="${DRY_RUN:-0}"
 STOP_ON_ERROR="${STOP_ON_ERROR:-0}"
 
 MODALITIES="${MODALITIES:-gelsight xense neote neote_force_field}"
-TASKS="${TASKS:-insert_USB insert_block grasp_in_clutter place_cube_on_colored_area pull_drawer pour_ball_to_cup move_cup turn_gear_pair}"
+TASKS="${TASKS:-insert_USB insert_block pull_drawer gear_assembly}"
 
 RUN_NAME="${RUN_NAME:-$(date +%Y%m%d_%H%M%S)}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${PROJECT_ROOT}/data}"

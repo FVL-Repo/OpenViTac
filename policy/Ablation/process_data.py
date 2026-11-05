@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "task_name",
         type=str,
-        help="The name of the task (e.g., insert_hole)",
+        help="The name of the task (e.g., insert_USB)",
     )
     parser.add_argument("task_config", type=str, help="Task config (e.g., demo)")
     parser.add_argument("expert_data_num", type=int, help="Number of episodes to process")

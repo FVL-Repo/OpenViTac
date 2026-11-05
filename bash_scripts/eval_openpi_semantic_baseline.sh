@@ -3,17 +3,14 @@
 # OpenPI semantic baseline eval for OpenViTac tasks.
 #
 # Supported tasks:
-#   grasp_in_clutter
 #   insert_block
-#   move_cup
-#   place_cube_on_colored_area
 #
 # Examples:
 #   TASK=insert_block MODALITY=gelsight GPU=0 \
 #     DEPLOY_CONFIG=openpi/eef_delta/deploy_eef_delta_vision \
 #     bash bash_scripts/eval_openpi_semantic_baseline.sh
 #
-#   TASK=move_cup MODALITY=xense TOTAL_NUM_PER_CASE=10 DRY_RUN=1 \
+#   TASK=insert_block MODALITY=xense TOTAL_NUM_PER_CASE=10 DRY_RUN=1 \
 #     bash bash_scripts/eval_openpi_semantic_baseline.sh
 
 set -uo pipefail
@@ -61,23 +58,6 @@ validate_modality() {
         *)
             echo "Unknown modality: $1"
             echo "Valid modalities: gelsight xense neote neote_force_field"
-            return 1
-            ;;
-    esac
-}
-
-target_to_grasp_block_name() {
-    case "$1" in
-        half_cylinder)
-            echo "block_blue_half_cylinder"
-            ;;
-        cylinder)
-            echo "block_yellow_cylinder"
-            ;;
-        hexagonal_prism)
-            echo "block_red_hexagonal_prism"
-            ;;
-        *)
             return 1
             ;;
     esac
@@ -359,29 +339,6 @@ echo "Dry run:             ${DRY_RUN}"
 
 case_index=0
 case "${TASK}" in
-    grasp_in_clutter)
-        TARGETS="${TARGETS:-half_cylinder cylinder hexagonal_prism}"
-        LAYOUTS=(
-            "layout0:0,1,2,3,4,5,6"
-            "layout1:2,3,4,5,6,0,1"
-            "layout2:4,5,6,0,1,2,3"
-            "layout3:6,0,1,2,3,4,5"
-        )
-        read -r -a target_list <<< "${TARGETS}"
-        for target in "${target_list[@]}"; do
-            target_block="$(target_to_grasp_block_name "${target}")" || {
-                echo "Unknown grasp_in_clutter target: ${target}"
-                exit 2
-            }
-            for layout_entry in "${LAYOUTS[@]}"; do
-                layout_name="${layout_entry%%:*}"
-                pose_indices="${layout_entry#*:}"
-                run_one "${target}_${layout_name}" "$(printf 'target_block: %s\nblock_base_pose_indices: [%s]\n' "${target_block}" "${pose_indices}")" "${case_index}"
-                ((case_index += 1))
-                (( stop_requested == 1 )) && break 2
-            done
-        done
-        ;;
     insert_block)
         TARGETS="${TARGETS:-cube half_cylinder hexagon}"
         LAYOUTS=(
@@ -408,46 +365,9 @@ case "${TASK}" in
             done
         done
         ;;
-    move_cup)
-        SEMANTICS=(
-            "blue:left:yellow"
-            "blue:right:yellow"
-            "yellow:left:blue"
-            "yellow:right:blue"
-        )
-        LAYOUTS=(
-            "layout0:0,1,2"
-            "layout1:1,2,0"
-            "layout2:2,0,1"
-        )
-        for semantic in "${SEMANTICS[@]}"; do
-            IFS=':' read -r target side reference <<< "${semantic}"
-            for layout_entry in "${LAYOUTS[@]}"; do
-                layout_name="${layout_entry%%:*}"
-                pose_indices="${layout_entry#*:}"
-                run_one "${target}_${side}_of_${reference}_${layout_name}" "$(printf 'target_cup: %s\nreference_cup: %s\nplacement_side: %s\ncup_base_pose_indices: [%s]\n' "${target}" "${reference}" "${side}" "${pose_indices}")" "${case_index}"
-                ((case_index += 1))
-                (( stop_requested == 1 )) && break 2
-            done
-        done
-        ;;
-    place_cube_on_colored_area)
-        CASES=(
-            "yellow:yellow_left"
-            "yellow:blue_left"
-            "blue:yellow_left"
-            "blue:blue_left"
-        )
-        for case_entry in "${CASES[@]}"; do
-            IFS=':' read -r target_area frame_order <<< "${case_entry}"
-            run_one "${target_area}_${frame_order}" "$(printf 'target_area: %s\nframe_order: %s\n' "${target_area}" "${frame_order}")" "${case_index}"
-            ((case_index += 1))
-            (( stop_requested == 1 )) && break
-        done
-        ;;
     *)
         echo "Unsupported TASK=${TASK}"
-        echo "Supported tasks: grasp_in_clutter insert_block move_cup place_cube_on_colored_area"
+        echo "Supported tasks: insert_block"
         exit 2
         ;;
 esac

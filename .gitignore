@@ -87,7 +87,10 @@ textures.zip
 *.pre_*
 
 # Keep the fragile-chip container texture with its task assets.
-!/assets/objects/task_assets/tactile_first_suite/chip_container_label.png
+!/assets/objects/task_assets/grasp_chip/chip_container_label.png
 
 # Version the research figures used by the public README.
 !/docs/media/*.png
+
+# Version textures moved with the empty-can selection assets.
+!/assets/objects/task_assets/empty_can_selection/*.png

@@ -8,17 +8,17 @@ Running the following command will start data collection for the specified task:
 
 ```bash
 bash collect_data.sh ${task_name} ${config_name} ${gpu_id}
-# Example: bash collect_data.sh lift_bottle demo 0
+# Example: bash collect_data.sh insert_USB gelsight 0
 ```
 
 For faster collection with multiple parallel simulation workers: (Note: the parallel collection is implemented with Python's multiprocessing, so multiple Isaac Sim Apps will be launched on the same time)
 
 ```bash
 bash parallel_collect.sh ${task_name} ${config_name} ${gpu_id} [num_processes]
-# Example: bash parallel_collect.sh lift_bottle demo 0 3
+# Example: bash parallel_collect.sh insert_USB gelsight 0 3
 ```
 
-All available `task_name` options correspond to Python modules in the `envs/` directory (e.g., `lift_bottle`, `insert_HDMI`, `pull_out_key`, `grasp_classify`, etc.). The `config_name` parameter specifies a YAML configuration file in `task_config/` (without the `.yml` extension). The `gpu_id` parameter specifies which GPU to use (multiple GPUs are supported).
+All available `task_name` options correspond to Python modules in the `envs/` directory (e.g., `insert_USB`, `insert_block`, `grasp_chip`, `gear_assembly`, etc.). The `config_name` parameter specifies a YAML configuration file in `task_config/` (without the `.yml` extension). The `gpu_id` parameter specifies which GPU to use (multiple GPUs are supported).
 
 ## Task Configuration
 

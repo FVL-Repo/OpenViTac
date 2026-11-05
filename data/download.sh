@@ -6,4 +6,4 @@ then
     pip install modelscope
 fi
 
-modelscope download --dataset byml2024/OpenViTac
+modelscope download --dataset FVLRepo/OpenViTac

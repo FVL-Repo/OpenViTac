@@ -5,9 +5,9 @@
 # Goal
 # ----
 # Collect these fixed cases in order:
-#   1. weight_classify: heavy, then light
-#   2. roughness_classify: smooth, then rough
-#   3. hardness_classify: soft, then hard
+#   1. weight_classification: heavy, then light
+#   2. roughness_classification: smooth, then rough
+#   3. hardness_classification: soft, then hard
 #
 # Default collection size
 # -----------------------
@@ -15,12 +15,12 @@
 #
 # Output layout
 # -------------
-#   data_${MODALITY}/classify/weight_classify/heavy/
-#   data_${MODALITY}/classify/weight_classify/light/
-#   data_${MODALITY}/classify/roughness_classify/smooth/
-#   data_${MODALITY}/classify/roughness_classify/rough/
-#   data_${MODALITY}/classify/hardness_classify/soft/
-#   data_${MODALITY}/classify/hardness_classify/hard/
+#   data_${MODALITY}/classify/weight_classification/heavy/
+#   data_${MODALITY}/classify/weight_classification/light/
+#   data_${MODALITY}/classify/roughness_classification/smooth/
+#   data_${MODALITY}/classify/roughness_classification/rough/
+#   data_${MODALITY}/classify/hardness_classification/soft/
+#   data_${MODALITY}/classify/hardness_classification/hard/
 #
 # Examples
 # --------
@@ -58,12 +58,12 @@ SUMMARY_FILE="${RUN_LOG_DIR}/summary.tsv"
 # Format: task_name:label_key:label_value
 # Order is intentional.
 CASES=(
-    "weight_classify:weight_label:heavy"
-    "weight_classify:weight_label:light"
-    "roughness_classify:roughness_label:smooth"
-    "roughness_classify:roughness_label:rough"
-    "hardness_classify:hardness_label:soft"
-    "hardness_classify:hardness_label:hard"
+    "weight_classification:weight_label:heavy"
+    "weight_classification:weight_label:light"
+    "roughness_classification:roughness_label:smooth"
+    "roughness_classification:roughness_label:rough"
+    "hardness_classification:hardness_label:soft"
+    "hardness_classification:hardness_label:hard"
 )
 
 valid_positive_int() {
@@ -80,13 +80,13 @@ validate_case() {
     local label_value="$3"
 
     case "${task_name}:${label_key}:${label_value}" in
-        weight_classify:weight_label:heavy|weight_classify:weight_label:light)
+        weight_classification:weight_label:heavy|weight_classification:weight_label:light)
             return 0
             ;;
-        roughness_classify:roughness_label:smooth|roughness_classify:roughness_label:rough)
+        roughness_classification:roughness_label:smooth|roughness_classification:roughness_label:rough)
             return 0
             ;;
-        hardness_classify:hardness_label:soft|hardness_classify:hardness_label:hard)
+        hardness_classification:hardness_label:soft|hardness_classification:hardness_label:hard)
             return 0
             ;;
         *)
