@@ -47,22 +47,22 @@ class _TodoExpert:
     """Explicit stub: the scripted policy for this task is not yet written."""
 
     def init(self) -> None:
-        raise NotImplementedError("expert not yet written for turn_gear_pair")
+        raise NotImplementedError("expert not yet written for gear_assembly")
 
     def step(
         self, world: ExpertWorld, state: None
     ) -> tuple[None, Action] | None:
-        raise NotImplementedError("expert not yet written for turn_gear_pair")
+        raise NotImplementedError("expert not yet written for gear_assembly")
 
 
 def _todo_success(world: ExpertWorld) -> Iterator[bool]:
     """Explicit stub: the success check for this task is not yet written."""
-    raise NotImplementedError("success check not yet written for turn_gear_pair")
+    raise NotImplementedError("success check not yet written for gear_assembly")
     yield False
 
 
-TurnGearPair = Task(
-    name="turn_gear_pair",
+GearAssembly = Task(
+    name="gear_assembly",
     embodiment=FRANKA_ROBOTIQ,
     sensors=xense_pair(),
     cameras=(
@@ -97,20 +97,20 @@ TurnGearPair = Task(
         # Fixture, like the PD cabinet: the joint makes the base immovable without a
         # density proxy.
         Actor(
-            "turn_gear_pair/gear_pair_base.usd",
+            "gear_assembly/gear_pair_base.usd",
             "/World/actors/base",
             pos=_BASE_POS,
             dynamic=False,
             authority="physx",
         ),
         Actor(
-            "turn_gear_pair/gear_pair_red.usd",
+            "gear_assembly/gear_pair_red.usd",
             "/World/actors/red_gear",
             pos=_RED_GEAR_PICK_POS,
             authority="physx",
         ),
         Actor(
-            "turn_gear_pair/gear_pair_blue.usd",
+            "gear_assembly/gear_pair_blue.usd",
             "/World/actors/blue_gear",
             pos=_BLUE_GEAR_POS,
             rot=_BLUE_GEAR_ROT_XYZW,

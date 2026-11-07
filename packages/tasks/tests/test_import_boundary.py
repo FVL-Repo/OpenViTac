@@ -63,7 +63,7 @@ class TaskImportBoundaryTests(unittest.TestCase):
                 self.assertTrue(binding.pad_key)
 
     def test_robotiq_task_declares_adaptive_capability(self) -> None:
-        task = TASKS["turn_gear_pair"]
+        task = TASKS["gear_assembly"]
         self.assertIn("adaptive_close", task.required_capabilities)
         self.assertIn(
             "adaptive_close", task.embodiment.gripper.capabilities

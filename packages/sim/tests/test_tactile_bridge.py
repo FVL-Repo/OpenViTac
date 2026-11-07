@@ -235,11 +235,11 @@ class SensorMappingTests(unittest.TestCase):
             self.assertIsNone(obj.youngs_mpa)
             self.assertIsNone(obj.poisson)
 
-    def test_weight_classify_density_reaches_object_cfg(self) -> None:
-        from openvitac_tasks.tasks.weight_classify import WeightClassify
+    def test_weight_classification_density_reaches_object_cfg(self) -> None:
+        from openvitac_tasks.tasks.weight_classification import WeightClassification
 
         objects = {
-            obj.name: obj for obj in objects_from_actors(WeightClassify.actors)
+            obj.name: obj for obj in objects_from_actors(WeightClassification.actors)
         }
         self.assertEqual(objects["light_block"].density_kg_m3, 100.0)
         self.assertEqual(objects["heavy_block"].density_kg_m3, 30000.0)

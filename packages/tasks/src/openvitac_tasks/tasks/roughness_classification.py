@@ -1,10 +1,9 @@
-"""WC (paper abbreviation): classify the block weight by touch, then place it on the
-matching plate.  Both blocks share one usd; only their PhysX mass density differs.
+"""RC (paper abbreviation): classify the block surface by touch, then place it on the
+matching plate.  The smooth and rough variants are distinct usd files.
 
 Per episode, ``seed`` samples one label.  That block starts at ``(0.38, 0, 0.002)``;
-the other block rests on the table at ``(0.30, +/-0.25, 0.002)`` (the legacy y=+/-1.0
-standby lies off the new table).  Legacy mapping: light -> blue plate, heavy ->
-yellow plate.
+the other block rests on the table at ``(0.30, 0.25, 0.002)``.  Legacy mapping:
+smooth -> blue plate, rough -> yellow plate.
 """
 from __future__ import annotations
 
@@ -37,36 +36,37 @@ from ..motion import (
 
 _HEAD_CAM_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)  # 2.x camera offset was WXYZ
 
-_LABELS = ("light", "heavy")
-_BLOCK_BY_LABEL = {"light": "light_block", "heavy": "heavy_block"}
-_PLATE_BY_LABEL = {"light": "blue_plate", "heavy": "yellow_plate"}
-# The old stack used 2e5, but that 3.6 kg block slips in the current
-# binary-close PhysX gripper; 3e4 (0.54 kg) preserves a 300x contrast.
-_DENSITY_BY_LABEL = {"light": 1.0e2, "heavy": 3.0e4}
-# Both blocks are UIPC bodies: spawn 1.5 mm above the 2.5 mm table top (the
-# solver rejects an initial overlap with the fixed support body).
+_LABELS = ("smooth", "rough")
+_BLOCK_BY_LABEL = {"smooth": "smooth_block", "rough": "rough_block"}
+_PLATE_BY_LABEL = {"smooth": "blue_plate", "rough": "yellow_plate"}
+# The table top is at 2.5 mm (a 1 m cube scaled to 5 mm in the authored USD).
+# Spawn 1.5 mm above it: UIPC rejects any initial overlap with the fixed
+# support body, so the block must start clear and settle onto it.
 _BLOCK_START_POS = (0.38, 0.0, 0.004)
-_BLOCK_STANDBY_BY_LABEL = {
-    "light": (0.30, 0.25, 0.004),
-    "heavy": (0.30, -0.25, 0.004),
-}
-# UIPC fixed supports mirror the table and both plates (box centres/half
-# extents are actor-local metres; the tops sit on the authored 2.5 mm table
-# and 8 mm plate, as in roughness_classify).
+_BLOCK_STANDBY_POS = (0.30, 0.25, 0.004)
+# UIPC fixed supports mirror the PhysX table and the matching plate: box
+# centers/half extents are actor-local metres and their top faces sit exactly
+# on the authored surfaces (world z = 2.5 mm table, 8 mm plate).  Fixed bodies
+# must not overlap each other at init, so the table box starts just above the
+# UIPC floor (z = 0) and the plate box just above the table top.
 _TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.3, 0.3, 0.0012))
 _PLATE_SUPPORT_BOX = ((0.0, 0.0, 0.0033), (0.04, 0.04, 0.0027))
 _GRASP_HEIGHT = 0.035
-# The gel is the contact surface on the UIPC path, so a blind close crushes it;
-# the commanded close comes from the block width (15.00 mm, black_smooth_cuboid
-# bounds +/-0.0075 m) through the shared close law.
-_BLOCK_WIDTH = 0.01500
-_CLOSE_Q = pad_close_q(_BLOCK_WIDTH)
+# Both blocks are UIPC bodies, so the commanded close comes from the grasped
+# block's own width through the shared close law (motion.pad_close_q).  The
+# widths are the asset bounds (black_smooth_cuboid.usd +/-0.00750 m,
+# black_rough_cuboid.usd +/-0.00794 m).  The gel is the contact surface on the
+# UIPC path, so a blind close would crush it.
+_BLOCK_WIDTH_BY_NAME = {"smooth_block": 0.01500, "rough_block": 0.01588}
+_CLOSE_Q_BY_BLOCK = {
+    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_NAME.items()
+}
+_GEL_THICKNESS = 0.004
+# Neither cuboid USD authors a mass density; 1e3 kg/m^3 is the PhysX default
+# and the UIPC bridge default, so the explicit value only pins the path.
+_BLOCK_DENSITY = 1.0e3
 _APPROACH_CLEARANCE = 0.05
-# The approach arrives horizontally over a standing 80 mm block.  The pad face
-# is 25.3 mm tall, so at _APPROACH_CLEARANCE the pad's lower edge is inside the
-# block (see roughness_regrasp); clear the block top instead.
-_TRANSIT_CLEARANCE = 0.09
-_LIFT_HEIGHT = 0.06
+_LIFT_HEIGHT = 0.05
 _TARGET_BLOCK_Z = 0.01
 _SUCCESS_XY_TOLERANCE = 0.04
 _SUCCESS_Z_TOLERANCE = 0.01
@@ -74,46 +74,33 @@ _SUCCESS_Z_AXIS_DOT = 0.965
 
 
 def _label(world: ExpertWorld) -> str:
-    """Read the sampled weight label from the task setup metadata."""
-    value = world.expert_param("weight_label")
+    """Read the sampled classification label from the task setup metadata."""
+    value = world.expert_param("roughness_label")
     if not isinstance(value, str) or value not in _LABELS:
-        raise ValueError(f"unexpected weight_label: {value!r}")
+        raise ValueError(f"unexpected roughness_label: {value!r}")
     return value
 
 
 def _randomize(task: Task, seed: int) -> EpisodeRandomization:
-    """Sample the weight label and move the selected block to the shared start pose."""
+    """Sample the label and place the selected block at the shared start pose."""
     label = random.Random(seed).choice(_LABELS)
     selected = _BLOCK_BY_LABEL[label]
-    other_label = "heavy" if label == "light" else "light"
-    other = _BLOCK_BY_LABEL[other_label]
+    other = _BLOCK_BY_LABEL["rough" if label == "smooth" else "smooth"]
     target = _PLATE_BY_LABEL[label]
     poses = {
-        f"/World/actors/{selected}": ActorPose(
-            _BLOCK_START_POS, (0.0, 0.0, 0.0, 1.0)
-        ),
-        f"/World/actors/{other}": ActorPose(
-            _BLOCK_STANDBY_BY_LABEL[other_label], (0.0, 0.0, 0.0, 1.0)
-        ),
+        f"/World/actors/{selected}": ActorPose(_BLOCK_START_POS, (0.0, 0.0, 0.0, 1.0)),
+        f"/World/actors/{other}": ActorPose(_BLOCK_STANDBY_POS, (0.0, 0.0, 0.0, 1.0)),
     }
-    plate = target.removesuffix("_plate")
     return EpisodeRandomization(
         seed=seed,
-        instruction=(
-            f"Classify the block weight by touch: place the {label} block on "
-            f"the {plate} plate."
-        ),
+        instruction=f"Place the {label} block on the {target.replace('_', ' ')}.",
         actor_poses=poses,
         contact_object=f"/World/actors/{selected}",
-        metadata={
-            "weight_label": label,
-            "block_density": _DENSITY_BY_LABEL[label],
-            "target_plate": target,
-        },
+        metadata={"roughness_label": label, "target_plate": target},
     )
 
 
-class _WeightPhase(Enum):
+class _RoughnessPhase(Enum):
     INIT = auto()
     PREGRASP = auto()
     DESCEND = auto()
@@ -127,14 +114,14 @@ class _WeightPhase(Enum):
 
 
 _NEXT = {
-    _WeightPhase.PREGRASP: _WeightPhase.DESCEND,
-    _WeightPhase.DESCEND: _WeightPhase.CLOSE,
-    _WeightPhase.CLOSE: _WeightPhase.LIFT,
-    _WeightPhase.LIFT: _WeightPhase.CARRY,
-    _WeightPhase.CARRY: _WeightPhase.PLACE,
-    _WeightPhase.PLACE: _WeightPhase.OPEN,
-    _WeightPhase.OPEN: _WeightPhase.RETRACT,
-    _WeightPhase.RETRACT: _WeightPhase.DONE,
+    _RoughnessPhase.PREGRASP: _RoughnessPhase.DESCEND,
+    _RoughnessPhase.DESCEND: _RoughnessPhase.CLOSE,
+    _RoughnessPhase.CLOSE: _RoughnessPhase.LIFT,
+    _RoughnessPhase.LIFT: _RoughnessPhase.CARRY,
+    _RoughnessPhase.CARRY: _RoughnessPhase.PLACE,
+    _RoughnessPhase.PLACE: _RoughnessPhase.OPEN,
+    _RoughnessPhase.OPEN: _RoughnessPhase.RETRACT,
+    _RoughnessPhase.RETRACT: _RoughnessPhase.DONE,
 }
 
 _MOVE_TICKS = 60
@@ -142,8 +129,8 @@ _SETTLE_TICKS = 60
 
 
 @dataclass(frozen=True)
-class _WeightState:
-    phase: _WeightPhase
+class _RoughnessState:
+    phase: _RoughnessPhase
     label: str = ""
     quat: Quat = (0.0, 0.0, 0.0, 1.0)
     command_pos: Vec3 = (0.0, 0.0, 0.0)
@@ -153,57 +140,68 @@ class _WeightState:
     hold: Hold | None = None
 
 
-def _action(state: _WeightState) -> Action:
+def _action(state: _RoughnessState) -> Action:
     return Action(state.command_pos, state.command_quat, state.gripper_qpos)
 
 
 def _enter(
-    phase: _WeightPhase, world: ExpertWorld, state: _WeightState
-) -> tuple[_WeightState, Action]:
+    phase: _RoughnessPhase, world: ExpertWorld, state: _RoughnessState
+) -> tuple[_RoughnessState, Action]:
     """Compute ``phase``'s targets from the live world and its first action."""
     block = _BLOCK_BY_LABEL[state.label]
     plate = _PLATE_BY_LABEL[state.label]
     match phase:
-        case _WeightPhase.PREGRASP:
+        case _RoughnessPhase.PREGRASP:
             (bx, by, bz), _ = world.object_pose(block)
-            hand_z = bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (bx, by, hand_z + _TRANSIT_CLEARANCE)
+            grasp_z = bz + _GRASP_HEIGHT
+            goal = (
+                bx,
+                by,
+                grasp_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            )
             ticks = 120
-        case _WeightPhase.DESCEND:
+        case _RoughnessPhase.DESCEND:
             (bx, by, bz), _ = world.object_pose(block)
-            hand_z = bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (bx, by, hand_z)
+            grasp_z = bz + _GRASP_HEIGHT
+            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE)
             ticks = _MOVE_TICKS
-        case _WeightPhase.CLOSE:
-            # Gel face _GRASP_OVERTRAVEL into the block per side.
-            qpos = _CLOSE_Q
+        case _RoughnessPhase.CLOSE:
+            qpos = _CLOSE_Q_BY_BLOCK[block]  # 1 mm gel overtravel per side
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
-        case _WeightPhase.LIFT:
+        case _RoughnessPhase.LIFT:
             (bx, by, bz), _ = world.object_pose(block)
-            hand_z = bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (bx, by, hand_z + _LIFT_HEIGHT)
+            grasp_z = bz + _GRASP_HEIGHT
+            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE + _LIFT_HEIGHT)
             ticks = 90
-        case _WeightPhase.CARRY:
+        case _RoughnessPhase.CARRY:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (tx, ty, place_z + _APPROACH_CLEARANCE)
+            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
+            goal = (
+                tx,
+                ty,
+                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            )
             ticks = 120
-        case _WeightPhase.PLACE:
+        case _RoughnessPhase.PLACE:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (tx, ty, place_z)
+            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
+            goal = (tx, ty, place_z + HAND_TO_GEL_FACE)
             ticks = 90
-        case _WeightPhase.OPEN:
+        case _RoughnessPhase.OPEN:
             qpos = world.arm.gripper.open_qpos
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
-        case _WeightPhase.RETRACT:
+        case _RoughnessPhase.RETRACT:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (tx, ty, place_z + _APPROACH_CLEARANCE)
+            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
+            goal = (
+                tx,
+                ty,
+                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            )
             ticks = 90
-        case _WeightPhase.INIT | _WeightPhase.DONE:
+        case _RoughnessPhase.INIT | _RoughnessPhase.DONE:
             raise AssertionError(f"{phase} has no entry targets")
     move, action = begin_move(
         world,
@@ -225,23 +223,24 @@ def _enter(
     )
 
 
-class _WeightExpert:
+class _RoughnessExpert:
     """Per-tick scripted policy: grasp the selected block, place it, retract.
 
     Phase order: PREGRASP -> DESCEND -> CLOSE -> LIFT -> CARRY -> PLACE -> OPEN
     -> RETRACT -> DONE, with the legacy tick budgets and 60-tick re-command.
     """
 
-    def init(self) -> _WeightState:
-        return _WeightState(phase=_WeightPhase.INIT)
+    def init(self) -> _RoughnessState:
+        return _RoughnessState(phase=_RoughnessPhase.INIT)
 
     def step(
-        self, world: ExpertWorld, state: _WeightState
-    ) -> tuple[_WeightState, Action] | None:
-        if state.phase is _WeightPhase.INIT:
+        self, world: ExpertWorld, state: _RoughnessState
+    ) -> tuple[_RoughnessState, Action] | None:
+        if state.phase is _RoughnessPhase.INIT:
             pos, quat = world.arm.ee_pose()
-            # Parallel the pad plane to the selected block's +/-y face; see
-            # roughness_classify for the lever-arm rationale.
+            # Parallel the pad plane to the block's +/-y face instead of
+            # inheriting the home pose: the 1.28 deg error there, times the
+            # 118.3 mm lever to the gel face, is 2.6 mm of lateral grasp error.
             _, bquat = world.object_pose(_BLOCK_BY_LABEL[_label(world)])
             quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
             state = replace(
@@ -252,8 +251,8 @@ class _WeightExpert:
                 command_quat=quat,
                 gripper_qpos=world.arm.gripper.joint_pos(),
             )
-            return _enter(_WeightPhase.PREGRASP, world, state)
-        if state.phase is _WeightPhase.DONE:
+            return _enter(_RoughnessPhase.PREGRASP, world, state)
+        if state.phase is _RoughnessPhase.DONE:
             return None
         if state.move is not None:
             advanced = advance_move(world, state.move, state.gripper_qpos)
@@ -270,7 +269,7 @@ class _WeightExpert:
                 )
             state = replace(state, move=None)
             next_phase = _NEXT[state.phase]
-            if next_phase is _WeightPhase.DONE:
+            if next_phase is _RoughnessPhase.DONE:
                 return None
             return _enter(next_phase, world, state)
         if state.hold is not None:
@@ -279,7 +278,7 @@ class _WeightExpert:
                 return replace(state, hold=hold), _action(state)
             state = replace(state, hold=None)
             next_phase = _NEXT[state.phase]
-            if next_phase is _WeightPhase.DONE:
+            if next_phase is _RoughnessPhase.DONE:
                 return None
             return _enter(next_phase, world, state)
         raise AssertionError(f"phase {state.phase} has no active command")
@@ -291,12 +290,16 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
         label = _label(world)
         (bx, by, bz), quat = world.object_pose(_BLOCK_BY_LABEL[label])
         (tx, ty, tz), _ = world.object_pose(_PLATE_BY_LABEL[label])
+        # Plates are axis-aligned.
+        dx = bx - tx
+        dy = by - ty
+        dz = bz - (tz + _TARGET_BLOCK_Z)
         qx, qy = quat[0], quat[1]
         upright = 1.0 - 2.0 * (qx * qx + qy * qy)
         seated = (
-            abs(bx - tx) < _SUCCESS_XY_TOLERANCE
-            and abs(by - ty) < _SUCCESS_XY_TOLERANCE
-            and abs(bz - (tz + _TARGET_BLOCK_Z)) < _SUCCESS_Z_TOLERANCE
+            abs(dx) < _SUCCESS_XY_TOLERANCE
+            and abs(dy) < _SUCCESS_XY_TOLERANCE
+            and abs(dz) < _SUCCESS_Z_TOLERANCE
             and upright > _SUCCESS_Z_AXIS_DOT
         )
         # Release/retract gate: the fingers have opened and the hand reached the
@@ -321,8 +324,8 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
         yield seated and released and retracted
 
 
-WeightClassify = Task(
-    name="weight_classify",
+RoughnessClassification = Task(
+    name="roughness_classification",
     embodiment=FRANKA_PANDA_GSMINI,
     sensors=gsmini_pair(streams=("rgb", "depth", "marker_rgb")),
     cameras=(
@@ -355,8 +358,9 @@ WeightClassify = Task(
             uipc_fixed_boxes=(_TABLE_SUPPORT_BOX,),
             authority="physx",
         ),
-        # Both plates are fixed supports: the label picks which one receives the
-        # block.  A dynamic actor cannot declare a fixed UIPC collision copy.
+        # Both plates are static so the UIPC world owns them as fixed bodies
+        # (a dynamic actor cannot declare a fixed UIPC collision copy); identical
+        # plates must also share one rest height.
         Actor(
             "roughness_task/blue_square_plate.usd",
             "/World/actors/blue_plate",
@@ -373,28 +377,30 @@ WeightClassify = Task(
             uipc_fixed_boxes=(_PLATE_SUPPORT_BOX,),
             authority="physx",
         ),
+        # Both blocks are UIPC bodies; the episode's contact object is the
+        # selected one (see _randomize), so neither is flagged here.
         Actor(
             "roughness_task/black_smooth_cuboid.usd",
-            "/World/actors/light_block",
-            pos=_BLOCK_STANDBY_BY_LABEL["light"],
+            "/World/actors/smooth_block",
+            pos=_BLOCK_STANDBY_POS,
             authority="uipc",
             tactile_mesh="roughness_task/black_smooth_cuboid_tet.npz",
-            density=_DENSITY_BY_LABEL["light"],
+            density=_BLOCK_DENSITY,
         ),
         Actor(
-            "roughness_task/black_smooth_cuboid.usd",
-            "/World/actors/heavy_block",
-            pos=_BLOCK_STANDBY_BY_LABEL["heavy"],
+            "roughness_task/black_rough_cuboid.usd",
+            "/World/actors/rough_block",
+            pos=_BLOCK_START_POS,
             authority="uipc",
-            tactile_mesh="roughness_task/black_smooth_cuboid_tet.npz",
-            density=_DENSITY_BY_LABEL["heavy"],
+            tactile_mesh="roughness_task/black_rough_cuboid_tet.npz",
+            density=_BLOCK_DENSITY,
         ),
     ),
     instruction=(
-        "Classify the block weight by touch: place the light block on the blue "
-        "plate and the heavy block on the yellow plate."
+        "Classify the block surface by touch: place the smooth block on the blue "
+        "plate and the rough block on the yellow plate."
     ),
-    expert=_WeightExpert(),
+    expert=_RoughnessExpert(),
     success=_success,
     randomizer=_randomize,
     required_capabilities=frozenset({"binary_close"}),

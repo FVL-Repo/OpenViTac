@@ -124,11 +124,11 @@ class ValidateRunParametersTests(unittest.TestCase):
             collect_module.sim, "launch", side_effect=AssertionError("launched")
         ):
             with self.assertRaisesRegex(ValueError, "--seed"):
-                collect("insert_usb", seed=-1)
+                collect("insert_USB", seed=-1)
             with self.assertRaisesRegex(ValueError, "--steps"):
-                collect("insert_usb", steps=0, no_video=True)
+                collect("insert_USB", steps=0, no_video=True)
             with self.assertRaisesRegex(ValueError, "video needs"):
-                collect("insert_usb", steps=1)
+                collect("insert_USB", steps=1)
 
 
 class OpenSceneTests(unittest.TestCase):
@@ -139,7 +139,7 @@ class OpenSceneTests(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "requires gripper"),
         ):
             _open_scene(
-                "insert_usb",
+                "insert_USB",
                 cast(Any, object()),
                 tactile=False,
                 optical_backend="taxim",
@@ -192,7 +192,7 @@ class CollectCloseTests(unittest.TestCase):
             error: Exception | None = None
             try:
                 collect(
-                    "insert_usb",
+                    "insert_USB",
                     out=Path(directory),
                     steps=steps,
                     no_video=no_video,

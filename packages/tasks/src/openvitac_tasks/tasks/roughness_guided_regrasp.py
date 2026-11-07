@@ -51,7 +51,7 @@ _GRASP_HEIGHT = 0.035
 # UIPC fixed supports mirror the table and the yellow plate the rough block is
 # released onto (box centres/half extents are actor-local metres; the tops sit
 # on the authored world z = 2.5 mm table and 8 mm plate, like
-# roughness_classify).  The table box is wider than that task's 0.3 m half
+# roughness_classification).  The table box is wider than that task's 0.3 m half
 # extent because this task parks a block at y = +/-0.30, its edge.
 _TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.35, 0.35, 0.0012))
 _PLATE_SUPPORT_BOX = ((0.0, 0.0, 0.0033), (0.04, 0.04, 0.0027))
@@ -317,7 +317,7 @@ class _RegraspExpert:
                 "rough_block" if initial_side == rough_side else "smooth_block"
             )
             # Parallel the pad plane to the grasped block's +/-y face; see
-            # roughness_classify for the lever-arm rationale.  Both blocks stay
+            # roughness_classification for the lever-arm rationale.  Both blocks stay
             # axis-aligned (upright on the table), so the second grasp reuses it.
             _, bquat = world.object_pose(first_block)
             quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
@@ -395,8 +395,8 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
         yield seated and released and retracted
 
 
-RoughnessRegrasp = Task(
-    name="roughness_regrasp",
+RoughnessGuidedRegrasp = Task(
+    name="roughness_guided_regrasp",
     embodiment=FRANKA_PANDA_GSMINI,
     sensors=gsmini_pair(streams=("rgb", "depth", "marker_rgb")),
     cameras=(

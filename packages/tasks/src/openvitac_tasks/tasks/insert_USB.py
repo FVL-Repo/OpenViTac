@@ -38,7 +38,7 @@ _INSERT_Z = max(_SLOT_HOLE_BOTTOM, _SLOT_HEIGHT - _PLUG_HEIGHT)
 # Hover above the target opening before descending.
 _APPROACH_CLEARANCE = 0.010
 # Commanded hand origin -> pad grasp midpoint. Measured at the settled close
-# pose (insert_usb seed 0, 120 Hz): hand (0.400640, -0.000036, 0.182223), pad
+# pose (insert_USB seed 0, 120 Hz): hand (0.400640, -0.000036, 0.182223), pad
 # midpoint (0.397410, 0.002730, 0.064201). The actual hand->pad distance is
 # 118.02 mm, but the command interface settles ~1.35 mm high and ~0.64 mm in
 # +x, so the command-space offset is 116.67 mm. The 0.0584 m bare finger
@@ -473,14 +473,14 @@ def _randomize(task: Task, seed: int) -> EpisodeRandomization:
         actor_poses=overrides,
         expert_params={},
         metadata={
-            "dr.version": "insert_usb.scene_pose.v1",
+            "dr.version": "insert_USB.scene_pose.v1",
             "dr.slot_xy_half_m": half,
         },
     )
 
 
 InsertUsb = Task(
-    name="insert_usb",
+    name="insert_USB",
     embodiment=FRANKA_PANDA_GSMINI,
     sensors=gsmini_pair(streams=("rgb", "depth", "marker_rgb")),
     cameras=(
@@ -513,7 +513,7 @@ InsertUsb = Task(
             authority="physx",
         ),
         Actor(
-            "insert_usb/slot_start.usd",
+            "insert_USB/slot_start.usd",
             "/World/actors/start_slot",
             pos=(0.4, 0.0, 0.002),
             dynamic=False,
@@ -521,22 +521,22 @@ InsertUsb = Task(
             authority="physx",
         ),
         Actor(
-            "insert_usb/slot_target.usd",
+            "insert_USB/slot_target.usd",
             "/World/actors/slot",
             pos=(0.52, 0.0, 0.002),
             dynamic=False,
-            uipc_fixed_mesh="insert_usb/slot_target_tet.npz",
+            uipc_fixed_mesh="insert_USB/slot_target_tet.npz",
             authority="physx",
         ),
         # Keep the plug tip >1 mm above the fixed support floor: UIPC's init
         # sanity check rejects any initial overlap.  The expert reads the live
         # USB pose, so this is not a hard-coded grasp height.
         Actor(
-            "insert_usb/usb.usd",
+            "insert_USB/usb.usd",
             "/World/actors/usb",
             pos=(0.4, 0.0, 0.0085),
             authority="uipc",
-            tactile_mesh="insert_usb/usb_tet.npz",
+            tactile_mesh="insert_USB/usb_tet.npz",
             contact_object=True,
         ),
     ),

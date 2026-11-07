@@ -34,22 +34,18 @@ VOLUME_TOL = 1e-3
 # truth for migration state: a listed task is skipped by the property checks,
 # but the gate verifies it really fails one, so a fixed task must be removed.
 NOT_READY: dict[TaskName, str] = {
-    "hardness_classify": "stub: no per-episode setup, expert or success yet",
+    "hardness_classification": "stub: no per-episode setup, expert or success yet",
     "insert_block": (
         "tet bbox tolerance: half_cylinder 9.31 um, hexagon 9.25 um vs the "
         "gate's 1 um"
     ),
-    "insert_block_v2": (
-        "registry alias of insert_block; inherits its tet bbox tolerance"
-    ),
-    "insert_usb": (
+    "insert_USB": (
         "asset bbox 26 um vs the gate's 1 um; close is not width-derived "
         "(close_qpos=0) and the tactile crush check is pending"
     ),
-    "turn_gear_pair": "stub; Xense/Robotiq embodiment, no GsMini pads",
+    "gear_assembly": "stub; Xense/Robotiq embodiment, no GsMini pads",
 }
 
-CANON = {"insert_block_v2": "insert_block"}
 INSERT_TARGETS = {
     "cube": "block_blue_cube",
     "half_cylinder": "block_blue_half_cylinder",
@@ -68,15 +64,15 @@ CLOSE: dict[str, dict[str, tuple[float, float, float]]] = {
         "block_red_hexagonal_prism": (0.031176, 0.001, 0.0110242),
     },
     "pull_drawer": {"upper_drawer": (0.020000, 0.0015, 0.0049362)},
-    "roughness_classify": {
+    "roughness_classification": {
         "smooth_block": (0.01500, 0.001, 0.0029362),
         "rough_block": (0.01588, 0.001, 0.0033762),
     },
-    "roughness_regrasp": {
+    "roughness_guided_regrasp": {
         "smooth_block": (0.01500, 0.001, 0.0029362),
         "rough_block": (0.01588, 0.001, 0.0033762),
     },
-    "weight_classify": {
+    "weight_classification": {
         "light_block": (0.01500, 0.001, 0.0029362),
         "heavy_block": (0.01500, 0.001, 0.0029362),
     },
@@ -87,9 +83,9 @@ CLOSE: dict[str, dict[str, tuple[float, float, float]]] = {
 CLOSE_EXTENT_AXIS = {
     "insert_block": 1,
     "pull_drawer": None,
-    "roughness_classify": 1,
-    "roughness_regrasp": 1,
-    "weight_classify": 1,
+    "roughness_classification": 1,
+    "roughness_guided_regrasp": 1,
+    "weight_classification": 1,
 }
 
 # Solid-hull tet proxies: the usd is hollow, so the tet mesh is the filled
@@ -117,16 +113,16 @@ CLOSE_CONST = {
         "openvitac_tasks.tasks.pull_drawer",
         "_CLOSE_Q",
     ),
-    "roughness_classify": (
-        "openvitac_tasks.tasks.roughness_classify",
+    "roughness_classification": (
+        "openvitac_tasks.tasks.roughness_classification",
         "_CLOSE_Q_BY_BLOCK",
     ),
-    "roughness_regrasp": (
-        "openvitac_tasks.tasks.roughness_regrasp",
+    "roughness_guided_regrasp": (
+        "openvitac_tasks.tasks.roughness_guided_regrasp",
         "_CLOSE_Q_BY_BLOCK",
     ),
-    "weight_classify": (
-        "openvitac_tasks.tasks.weight_classify",
+    "weight_classification": (
+        "openvitac_tasks.tasks.weight_classification",
         "_CLOSE_Q",
     ),
 }
@@ -206,7 +202,6 @@ class TactileCoverageTests(unittest.TestCase):
 
     def _failures(self, task: Any) -> list[str]:
         """Every property check's failure message, in one list."""
-        canon = CANON.get(task.name, task.name)
         failures: list[str] = []
         for label, check in (
             ("meshes", self._check_meshes),
@@ -216,11 +211,11 @@ class TactileCoverageTests(unittest.TestCase):
                 check(task)
             except AssertionError as exc:
                 failures.append(f"{label}: {exc}")
-        if canon not in CLOSE:
+        if task.name not in CLOSE:
             failures.append("close: no width-derived close pinned")
         else:
             try:
-                self._check_close(task, canon)
+                self._check_close(task, task.name)
             except AssertionError as exc:
                 failures.append(f"close: {exc}")
         return failures
@@ -446,20 +441,20 @@ class TactileCoverageTests(unittest.TestCase):
 
     @staticmethod
     def _success_object(name: str, randomization: Any) -> str | None:
-        if name == "roughness_regrasp":
+        if name == "roughness_guided_regrasp":
             return "/World/actors/rough_block"
         if name == "pull_drawer":
             return "/World/actors/upper_drawer"
-        if name == "weight_classify":
+        if name == "weight_classification":
             label = randomization.metadata["weight_label"]
             return f"/World/actors/{label}_block"
-        if name == "insert_block" or name == "insert_block_v2":
+        if name == "insert_block":
             target = randomization.metadata["target_block"]
             return f"/World/actors/{INSERT_TARGETS[target]}"
-        if name == "roughness_classify":
+        if name == "roughness_classification":
             label = randomization.metadata["roughness_label"]
             return f"/World/actors/{label}_block"
-        if name == "insert_usb":
+        if name == "insert_USB":
             return "/World/actors/usb"
         return None
 

@@ -20,15 +20,14 @@ from .expert import (
 )
 from .prefabricated import TASKS, TaskName
 from .tasks import (
-    HardnessClassify,
+    GearAssembly,
+    HardnessClassification,
     InsertBlock,
-    InsertBlockV2,
     InsertUsb,
     PullDrawer,
-    RoughnessClassify,
-    RoughnessRegrasp,
-    TurnGearPair,
-    WeightClassify,
+    RoughnessClassification,
+    RoughnessGuidedRegrasp,
+    WeightClassification,
 )
 
 __all__ = [
@@ -37,20 +36,19 @@ __all__ = [
     "EpisodeRandomization",
     "ExpertStateMachine",
     "ExpertWorld",
+    "GearAssembly",
     "GripperHandle",
-    "HardnessClassify",
+    "HardnessClassification",
     "InsertBlock",
-    "InsertBlockV2",
     "InsertUsb",
     "PullDrawer",
     "Quat",
-    "RoughnessClassify",
-    "RoughnessRegrasp",
+    "RoughnessClassification",
+    "RoughnessGuidedRegrasp",
     "SuccessFn",
     "Task",
     "TaskLogger",
     "TaskName",
-    "TurnGearPair",
     "Vec3",
-    "WeightClassify",
+    "WeightClassification",
 ]

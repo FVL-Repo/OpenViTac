@@ -37,7 +37,7 @@ class RecordCadenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 recorded_step_indices(5, every)
         with self.assertRaises(ValueError):
-            collect("insert_usb", record_every=0)
+            collect("insert_USB", record_every=0)
 
     def test_observation_carries_physics_step(self) -> None:
         obs = SceneObservation(

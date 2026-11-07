@@ -9,14 +9,14 @@ from typing import Any
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import HAND_TO_GEL_FACE
-from openvitac_tasks.tasks.roughness_regrasp import (
+from openvitac_tasks.tasks.roughness_guided_regrasp import (
     _APPROACH_CLEARANCE,
     _CLOSE_Q_BY_BLOCK,
     _GRASP_HEIGHT,
     _ROUGH_PLATE,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
-    RoughnessRegrasp,
+    RoughnessGuidedRegrasp,
 )
 
 _LEFT = (0.40, 0.12, 0.004)
@@ -147,14 +147,14 @@ class _World:
 
 
 def _world(seed: int) -> tuple[dict[str, str], _World]:
-    randomization = RoughnessRegrasp.setup(seed)
+    randomization = RoughnessGuidedRegrasp.setup(seed)
     params = {k: str(v) for k, v in randomization.metadata.items()}
     return params, _World(params)
 
 
 def _run(world: _World) -> list[str]:
     """Drive the registered state machine and record its phase sequence."""
-    machine = RoughnessRegrasp.expert
+    machine = RoughnessGuidedRegrasp.expert
     state = machine.init()
     phases: list[str] = []
     while True:
@@ -168,9 +168,9 @@ def _run(world: _World) -> list[str]:
 
 def _run_until_success(world: _World) -> tuple[str, float]:
     """Drive the machine like the collector; return the first-true phase."""
-    machine = RoughnessRegrasp.expert
+    machine = RoughnessGuidedRegrasp.expert
     state = machine.init()
-    verdicts = RoughnessRegrasp.success(world)
+    verdicts = RoughnessGuidedRegrasp.success(world)
     while True:
         result = machine.step(world, state)
         if result is None:
@@ -181,9 +181,9 @@ def _run_until_success(world: _World) -> tuple[str, float]:
             return str(state.phase.name), world.arm.gripper.joint_pos()
 
 
-class RoughnessRegraspTests(unittest.TestCase):
+class RoughnessGuidedRegraspTests(unittest.TestCase):
     def test_randomizer_sides_are_seeded_and_on_table(self) -> None:
-        randomization = RoughnessRegrasp.setup(0)
+        randomization = RoughnessGuidedRegrasp.setup(0)
         self.assertEqual(randomization.metadata["rough_block_side"], "right")
         self.assertEqual(randomization.metadata["initial_grasp_side"], "right")
         self.assertEqual(randomization.metadata["smooth_block_side"], "left")
@@ -206,9 +206,9 @@ class RoughnessRegraspTests(unittest.TestCase):
             + HAND_TO_GEL_FACE
             + _APPROACH_CLEARANCE,
         )
-        self.assertTrue(next(RoughnessRegrasp.success(world)))
+        self.assertTrue(next(RoughnessGuidedRegrasp.success(world)))
         world.blocks["rough"] = (_YELLOW[0] + 0.05, _YELLOW[1], _YELLOW[2] + 0.01)
-        self.assertFalse(next(RoughnessRegrasp.success(world)))
+        self.assertFalse(next(RoughnessGuidedRegrasp.success(world)))
 
     def test_close_position_per_block(self) -> None:
         # 15.00 mm -> 2.936 mm, 15.88 mm -> 3.376 mm (1 mm gel overtravel;
@@ -252,7 +252,7 @@ class RoughnessRegraspTests(unittest.TestCase):
         self.assertAlmostEqual(world.blocks["rough"][0], _YELLOW[0], places=6)
         self.assertAlmostEqual(world.blocks["rough"][1], _YELLOW[1], places=6)
         self.assertAlmostEqual(world.blocks["rough"][2], _YELLOW[2] + 0.01, places=6)
-        self.assertTrue(next(RoughnessRegrasp.success(world)))
+        self.assertTrue(next(RoughnessGuidedRegrasp.success(world)))
 
     def test_expert_parks_smooth_then_grasps_rough(self) -> None:
         params, world = _world(4)
@@ -268,7 +268,7 @@ class RoughnessRegraspTests(unittest.TestCase):
         self.assertAlmostEqual(world.blocks["rough"][0], _YELLOW[0], places=6)
         self.assertAlmostEqual(world.blocks["rough"][1], _YELLOW[1], places=6)
         self.assertAlmostEqual(world.blocks["rough"][2], _YELLOW[2] + 0.01, places=6)
-        self.assertTrue(next(RoughnessRegrasp.success(world)))
+        self.assertTrue(next(RoughnessGuidedRegrasp.success(world)))
 
 
 if __name__ == "__main__":

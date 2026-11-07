@@ -444,7 +444,7 @@ class V3RoundTripTests(unittest.TestCase):
                 extra=replace(
                     meta.extra,
                     randomization={
-                        "dr.version": "insert_usb.scene_pose.v1",
+                        "dr.version": "insert_USB.scene_pose.v1",
                         "dr.slot_xy_half_m": 0.030,
                         "actor.start_slot.pos_x": 0.41,
                     },
@@ -460,7 +460,7 @@ class V3RoundTripTests(unittest.TestCase):
                 )
             with Hdf5EpisodeReader(path) as reader:
                 stored = reader.meta.extra.randomization
-                self.assertEqual(stored["dr.version"], "insert_usb.scene_pose.v1")
+                self.assertEqual(stored["dr.version"], "insert_USB.scene_pose.v1")
                 self.assertAlmostEqual(float(stored["dr.slot_xy_half_m"]), 0.030)
                 self.assertAlmostEqual(float(stored["actor.start_slot.pos_x"]), 0.41)
 

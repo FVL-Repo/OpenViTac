@@ -5,10 +5,10 @@ randomizer and never touches Kit, the scene, or the GPU.  Each sampled seed
 becomes one JSONL row, so manifests can be reviewed, filtered with ``jq``, and
 collected seed-by-seed afterwards::
 
-    openvitac sample-seeds --task insert_usb --count 100 --out seeds.jsonl
+    openvitac sample-seeds --task insert_USB --count 100 --out seeds.jsonl
     jq -r 'select(.randomization["dr.slot_xy_half_m"] > 0.01) | .seed' \\
         seeds.jsonl | while read -r seed; do
-        openvitac collect insert_usb --seed "$seed" --expert
+        openvitac collect insert_USB --seed "$seed" --expert
     done
 
 Seeds are sampled in ``[start, start + count)`` order.  ``randomization`` holds
@@ -88,10 +88,10 @@ def sample_seeds(
     is launched, so this is safe to run on any machine.  Filter the manifest
     with ``jq`` and then call ``collect --seed <n>`` once per selected seed:
 
-        openvitac sample-seeds --task insert_usb --count 100 --out seeds.jsonl
+        openvitac sample-seeds --task insert_USB --count 100 --out seeds.jsonl
         jq -r 'select(.randomization["dr.slot_xy_half_m"] > 0.01) | .seed' \\
             seeds.jsonl | while read -r seed; do
-            openvitac collect insert_usb --seed "$seed" --expert
+            openvitac collect insert_USB --seed "$seed" --expert
         done
 
     Parameters

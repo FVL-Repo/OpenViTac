@@ -1,4 +1,4 @@
-"""insert_usb calibration and state-machine tests (no Isaac)."""
+"""insert_USB calibration and state-machine tests (no Isaac)."""
 
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from typing import Any
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action, InsertUsb
-from openvitac_tasks.tasks.insert_usb import (
+from openvitac_tasks.tasks.insert_USB import (
     _APPROACH_CLEARANCE,
     _EE_RETRACT_Z,
     _GRASP_HEIGHT,

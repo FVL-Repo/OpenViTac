@@ -9,7 +9,7 @@ from typing import Any
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import HAND_TO_GEL_FACE
-from openvitac_tasks.tasks.weight_classify import (
+from openvitac_tasks.tasks.weight_classification import (
     _APPROACH_CLEARANCE,
     _BLOCK_STANDBY_BY_LABEL,
     _BLOCK_START_POS,
@@ -18,7 +18,7 @@ from openvitac_tasks.tasks.weight_classify import (
     _GRASP_HEIGHT,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
-    WeightClassify,
+    WeightClassification,
 )
 
 _PLATES = {
@@ -141,7 +141,7 @@ class _World:
 
 def _run(world: _World) -> list[str]:
     """Drive the registered state machine and record its phase sequence."""
-    machine = WeightClassify.expert
+    machine = WeightClassification.expert
     state = machine.init()
     phases: list[str] = []
     while True:
@@ -155,9 +155,9 @@ def _run(world: _World) -> list[str]:
 
 def _run_until_success(world: _World) -> tuple[str, float]:
     """Drive the machine like the collector; return the first-true phase."""
-    machine = WeightClassify.expert
+    machine = WeightClassification.expert
     state = machine.init()
-    verdicts = WeightClassify.success(world)
+    verdicts = WeightClassification.success(world)
     while True:
         result = machine.step(world, state)
         if result is None:
@@ -168,11 +168,11 @@ def _run_until_success(world: _World) -> tuple[str, float]:
             return str(state.phase.name), world.arm.gripper.joint_pos()
 
 
-class WeightClassifyTests(unittest.TestCase):
+class WeightClassificationTests(unittest.TestCase):
     def test_randomizer_samples_both_labels_and_legacy_mapping(self) -> None:
         seen: set[str] = set()
         for seed in range(8):
-            randomization = WeightClassify.setup(seed)
+            randomization = WeightClassification.setup(seed)
             label = randomization.metadata["weight_label"]
             target = randomization.metadata["target_plate"]
             density = randomization.metadata["block_density"]
@@ -203,7 +203,7 @@ class WeightClassifyTests(unittest.TestCase):
     def test_task_uses_weight_densities_and_one_usd(self) -> None:
         blocks = {
             actor.prim_path: actor
-            for actor in WeightClassify.actors
+            for actor in WeightClassification.actors
             if actor.prim_path.endswith("_block")
         }
         self.assertEqual(set(blocks), {
@@ -241,10 +241,10 @@ class WeightClassifyTests(unittest.TestCase):
                 + HAND_TO_GEL_FACE
                 + _APPROACH_CLEARANCE,
             )
-            self.assertTrue(next(WeightClassify.success(world)))
+            self.assertTrue(next(WeightClassification.success(world)))
 
             world.blocks[label] = (target[0] + 0.05, target[1], target[2] + 0.01)
-            self.assertFalse(next(WeightClassify.success(world)))
+            self.assertFalse(next(WeightClassification.success(world)))
 
     def test_first_true_is_after_open_and_retract(self) -> None:
         target = _PLATES[_TARGETS["light"]]
@@ -292,7 +292,7 @@ class WeightClassifyTests(unittest.TestCase):
             )
             other = "heavy" if label == "light" else "light"
             self.assertEqual(world.blocks[other], _BLOCK_STANDBY_BY_LABEL[other])
-            self.assertTrue(next(WeightClassify.success(world)))
+            self.assertTrue(next(WeightClassification.success(world)))
 
 
 if __name__ == "__main__":

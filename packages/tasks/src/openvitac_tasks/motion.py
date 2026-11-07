@@ -24,7 +24,7 @@ HAND_TO_GEL_FACE = 0.11834
 # of the finger joint q); the right pad is the exact opposite.
 PAD_NORMAL_IN_HAND = (0.0, -1.0, 0.0)
 # Command-space hand origin -> gel pad midpoint along the hand's finger axis
-# (+z): measured 116.67 mm at the settled close pose in insert_usb (118.02 mm
+# (+z): measured 116.67 mm at the settled close pose in insert_USB (118.02 mm
 # geometric; the servo settles ~1.3 mm short, so targeting uses the command
 # value).  The offset must be rotated with the hand - adding it to a world
 # coordinate puts the pads centimetres off whenever the pad plane is aligned

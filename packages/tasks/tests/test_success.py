@@ -16,7 +16,7 @@ class SuccessGeneratorTests(unittest.TestCase):
                 self.assertTrue(inspect.isgeneratorfunction(task.success))
 
     def test_unimplemented_success_stubs_fail_on_first_read(self) -> None:
-        for name in ("hardness_classify", "turn_gear_pair"):
+        for name in ("hardness_classification", "gear_assembly"):
             with (
                 self.subTest(task=name),
                 self.assertRaises(NotImplementedError),

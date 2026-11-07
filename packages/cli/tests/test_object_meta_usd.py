@@ -35,7 +35,7 @@ def _fake_frames_and_surfaces(cfg):
 
 class TaskObjectUsdMetaTests(unittest.TestCase):
     def test_every_task_object_keeps_usd_provenance(self) -> None:
-        self.assertEqual(len(TASKS), 9)
+        self.assertEqual(len(TASKS), 8)
         for name, task in TASKS.items():
             with self.subTest(task=name):
                 cfg = tactile_plan_from_scene(task.scene_spec())
@@ -73,7 +73,7 @@ class TaskObjectUsdMetaTests(unittest.TestCase):
                         )
 
     def test_physx_and_uipc_objects_both_carry_usd(self) -> None:
-        cfg = tactile_plan_from_scene(TASKS["insert_usb"].scene_spec())
+        cfg = tactile_plan_from_scene(TASKS["insert_USB"].scene_spec())
         by_name = {obj.name: obj for obj in cfg.objects}
         usb = by_name["usb"]
         self.assertTrue(str(usb.usd_path).endswith("usb.usd"))

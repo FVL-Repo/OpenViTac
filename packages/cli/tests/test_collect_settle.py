@@ -154,7 +154,7 @@ class CollectSettleTests(unittest.TestCase):
         self.assertEqual(meta["settle.steps"], 20.0)
 
     def test_task_default_and_cli_override(self) -> None:
-        task = TASKS["roughness_regrasp"]
+        task = TASKS["roughness_guided_regrasp"]
         self.assertEqual(task.settle_steps, _DEFAULT_SETTLE_STEPS)
         self.assertEqual(_effective_settle_steps(task, None), task.settle_steps)
         self.assertEqual(_effective_settle_steps(task, 0), 0)
@@ -166,7 +166,7 @@ class CollectSettleTests(unittest.TestCase):
 
     def test_negative_settle_is_rejected_before_launch(self) -> None:
         with self.assertRaises(ValueError):
-            collect("insert_usb", settle_steps=-1)
+            collect("insert_USB", settle_steps=-1)
 
 
 if __name__ == "__main__":

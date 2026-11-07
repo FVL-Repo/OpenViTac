@@ -63,7 +63,7 @@ class SampleSeedsTests(unittest.TestCase):
     def test_rows_are_contiguous_parseable_scalars(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "seeds.jsonl"
-            sample_seeds("roughness_classify", out, start=17, count=5)
+            sample_seeds("roughness_classification", out, start=17, count=5)
             lines = out.read_text(encoding="utf-8").splitlines()
 
         self.assertEqual(len(lines), 5)
@@ -71,7 +71,7 @@ class SampleSeedsTests(unittest.TestCase):
         self.assertEqual([row["seed"] for row in rows], [17, 18, 19, 20, 21])
         for row in rows:
             self.assertEqual(set(row), {"seed", "task", "instruction", "randomization"})
-            self.assertEqual(row["task"], "roughness_classify")
+            self.assertEqual(row["task"], "roughness_classification")
             self.assertIsInstance(row["instruction"], str)
             self.assertIsInstance(row["randomization"], dict)
             for value in row["randomization"].values():
@@ -80,14 +80,14 @@ class SampleSeedsTests(unittest.TestCase):
     def test_label_and_metadata_match_direct_setup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "seeds.jsonl"
-            sample_seeds("roughness_classify", out, start=0, count=8)
+            sample_seeds("roughness_classification", out, start=0, count=8)
             rows = [
                 json.loads(line)
                 for line in out.read_text(encoding="utf-8").splitlines()
             ]
 
         for row in rows:
-            instruction, metadata = _expected("roughness_classify", row["seed"])
+            instruction, metadata = _expected("roughness_classification", row["seed"])
             self.assertEqual(row["instruction"], instruction)
             self.assertEqual(row["randomization"], metadata)
             self.assertIn(row["randomization"]["roughness_label"], {"smooth", "rough"})
@@ -104,8 +104,8 @@ class SampleSeedsTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "seeds.jsonl"
-            with mock.patch.dict(TASKS, {"insert_usb": _Spec()}):
-                sample_seeds("insert_usb", out, count=1)
+            with mock.patch.dict(TASKS, {"insert_USB": _Spec()}):
+                sample_seeds("insert_USB", out, count=1)
             row = json.loads(out.read_text(encoding="utf-8"))
 
         self.assertEqual(row["randomization"], {"label": "a"})
@@ -121,11 +121,11 @@ class SampleSeedsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "seeds.jsonl"
             with self.assertRaises(ValueError):
-                sample_seeds("insert_usb", out, start=-1, count=1)
+                sample_seeds("insert_USB", out, start=-1, count=1)
             with self.assertRaises(ValueError):
-                sample_seeds("insert_usb", out, count=0)
+                sample_seeds("insert_USB", out, count=0)
             with self.assertRaises(ValueError):
-                sample_seeds("insert_usb", out, count=-3)
+                sample_seeds("insert_USB", out, count=-3)
             self.assertFalse(out.exists())
 
     def test_failure_leaves_no_partial_file(self) -> None:
@@ -142,10 +142,10 @@ class SampleSeedsTests(unittest.TestCase):
             out = Path(directory) / "seeds.jsonl"
             out.write_text("previous\n", encoding="utf-8")
             with (
-                mock.patch.dict(TASKS, {"insert_usb": _Flaky()}),
+                mock.patch.dict(TASKS, {"insert_USB": _Flaky()}),
                 self.assertRaises(RuntimeError),
             ):
-                sample_seeds("insert_usb", out, count=4)
+                sample_seeds("insert_USB", out, count=4)
             self.assertEqual(out.read_text(encoding="utf-8"), "previous\n")
             self.assertEqual(
                 [path.name for path in Path(directory).iterdir()], ["seeds.jsonl"]
@@ -161,7 +161,7 @@ class SampleSeedsTests(unittest.TestCase):
                     "openvitac_cli",
                     "sample-seeds",
                     "--task",
-                    "insert_usb",
+                    "insert_USB",
                     "--start",
                     "4",
                     "--count",
@@ -182,7 +182,7 @@ class SampleSeedsTests(unittest.TestCase):
             ]
 
         self.assertEqual([row["seed"] for row in rows], [4, 5, 6])
-        self.assertTrue(all(row["task"] == "insert_usb" for row in rows))
+        self.assertTrue(all(row["task"] == "insert_USB" for row in rows))
 
     def test_command_import_loads_no_sim_or_isaaclab(self) -> None:
         result = subprocess.run(

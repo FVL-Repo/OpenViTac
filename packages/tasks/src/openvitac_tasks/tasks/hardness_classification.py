@@ -28,22 +28,24 @@ class _TodoExpert:
     """Explicit stub: the scripted policy for this task is not yet written."""
 
     def init(self) -> None:
-        raise NotImplementedError("expert not yet written for hardness_classify")
+        raise NotImplementedError("expert not yet written for hardness_classification")
 
     def step(
         self, world: ExpertWorld, state: None
     ) -> tuple[None, Action] | None:
-        raise NotImplementedError("expert not yet written for hardness_classify")
+        raise NotImplementedError("expert not yet written for hardness_classification")
 
 
 def _todo_success(world: ExpertWorld) -> Iterator[bool]:
     """Explicit stub: the success check for this task is not yet written."""
-    raise NotImplementedError("success check not yet written for hardness_classify")
+    raise NotImplementedError(
+        "success check not yet written for hardness_classification"
+    )
     yield False
 
 
-HardnessClassify = Task(
-    name="hardness_classify",
+HardnessClassification = Task(
+    name="hardness_classification",
     embodiment=FRANKA_PANDA_GSMINI,
     sensors=gsmini_pair(),
     cameras=(

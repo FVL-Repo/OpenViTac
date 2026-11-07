@@ -1,4 +1,4 @@
-"""insert_usb P0 scene-pose randomization tests (pure, no Isaac)."""
+"""insert_USB P0 scene-pose randomization tests (pure, no Isaac)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from openvitac_tasks import TASKS
 
 class InsertUsbRandomizationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.task = TASKS["insert_usb"]
+        self.task = TASKS["insert_USB"]
         self.actors = {actor.prim_path: actor for actor in self.task.actors}
 
     def test_start_and_target_slots_are_static_fixtures(self) -> None:
@@ -17,7 +17,7 @@ class InsertUsbRandomizationTests(unittest.TestCase):
         self.assertFalse(self.actors["/World/actors/start_slot"].dynamic)
 
     def test_usb_starts_with_clearance_above_start_support(self) -> None:
-        from openvitac_tasks.tasks.insert_usb import _START_SUPPORT_BOXES
+        from openvitac_tasks.tasks.insert_USB import _START_SUPPORT_BOXES
 
         start_z = self.actors["/World/actors/start_slot"].pos[2]
         bottom_center, bottom_half = _START_SUPPORT_BOXES[-1]
@@ -67,7 +67,7 @@ class InsertUsbRandomizationTests(unittest.TestCase):
         dr = self.task.setup(1)
         meta = dr.to_metadata()
         self.assertEqual(dr.expert_params, {})
-        self.assertEqual(meta["dr.version"], "insert_usb.scene_pose.v1")
+        self.assertEqual(meta["dr.version"], "insert_USB.scene_pose.v1")
         self.assertAlmostEqual(float(meta["dr.slot_xy_half_m"]), 0.030)
         self.assertIn("actor.start_slot.pos_x", meta)
         self.assertIn("actor.start_slot.quat_w", meta)

@@ -62,7 +62,7 @@ _DEFAULT_SETTLE_STEPS = 20
 _SETTLE_WINDOW = 5
 _SETTLE_POS_EPS_M = 1e-4
 _SETTLE_ROT_EPS_RAD = 1e-3
-# Safety cap for a scripted expert (insert_usb's current path is ~1600 steps, so
+# Safety cap for a scripted expert (insert_USB's current path is ~1600 steps, so
 # 2000 leaves headroom); hitting it records outcome="timeout" instead of
 # truncating silently.
 _DEFAULT_EXPERT_STEPS = 2000

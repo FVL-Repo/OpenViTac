@@ -12,13 +12,13 @@ import numpy as np
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import HAND_TO_GEL_FACE, PAD_NORMAL_IN_HAND
-from openvitac_tasks.tasks.roughness_classify import (
+from openvitac_tasks.tasks.roughness_classification import (
     _APPROACH_CLEARANCE,
     _CLOSE_Q_BY_BLOCK,
     _GRASP_HEIGHT,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
-    RoughnessClassify,
+    RoughnessClassification,
 )
 
 _PLATES = {
@@ -140,7 +140,7 @@ class _World:
 
 def _run(world: _World) -> list[str]:
     """Drive the registered state machine and record its phase sequence."""
-    machine = RoughnessClassify.expert
+    machine = RoughnessClassification.expert
     state = machine.init()
     phases: list[str] = []
     while True:
@@ -154,9 +154,9 @@ def _run(world: _World) -> list[str]:
 
 def _run_until_success(world: _World) -> tuple[str, float]:
     """Drive the machine like the collector; return the first-true phase."""
-    machine = RoughnessClassify.expert
+    machine = RoughnessClassification.expert
     state = machine.init()
-    verdicts = RoughnessClassify.success(world)
+    verdicts = RoughnessClassification.success(world)
     while True:
         result = machine.step(world, state)
         if result is None:
@@ -167,7 +167,7 @@ def _run_until_success(world: _World) -> tuple[str, float]:
             return str(state.phase.name), world.arm.gripper.joint_pos()
 
 
-class RoughnessClassifyTests(unittest.TestCase):
+class RoughnessClassificationTests(unittest.TestCase):
     def test_pad_normal_matches_authored_mount(self) -> None:
         from pxr import Usd, UsdGeom
 
@@ -200,7 +200,7 @@ class RoughnessClassifyTests(unittest.TestCase):
     def test_randomizer_samples_both_labels_and_table_standby(self) -> None:
         seen: set[str] = set()
         for seed in range(4):
-            randomization = RoughnessClassify.setup(seed)
+            randomization = RoughnessClassification.setup(seed)
             label = randomization.metadata["roughness_label"]
             target = randomization.metadata["target_plate"]
             assert isinstance(label, str)
@@ -242,10 +242,10 @@ class RoughnessClassifyTests(unittest.TestCase):
                 + HAND_TO_GEL_FACE
                 + _APPROACH_CLEARANCE,
             )
-            self.assertTrue(next(RoughnessClassify.success(world)))
+            self.assertTrue(next(RoughnessClassification.success(world)))
 
             world.blocks[label] = (target[0] + 0.05, target[1], target[2] + 0.01)
-            self.assertFalse(next(RoughnessClassify.success(world)))
+            self.assertFalse(next(RoughnessClassification.success(world)))
 
     def test_first_true_is_after_open_and_retract(self) -> None:
         target = _PLATES[_TARGETS["smooth"]]
@@ -291,7 +291,7 @@ class RoughnessClassifyTests(unittest.TestCase):
             self.assertAlmostEqual(placed[2], target[2] + 0.01, places=6)
             other = "rough" if label == "smooth" else "smooth"
             self.assertEqual(world.blocks[other], _STANDBY)
-            self.assertTrue(next(RoughnessClassify.success(world)))
+            self.assertTrue(next(RoughnessClassification.success(world)))
 
 
 if __name__ == "__main__":

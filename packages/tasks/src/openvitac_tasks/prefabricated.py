@@ -2,37 +2,34 @@ from typing import Literal
 
 from .base import Task
 from .tasks import (
-    HardnessClassify,
+    GearAssembly,
+    HardnessClassification,
     InsertBlock,
-    InsertBlockV2,
     InsertUsb,
     PullDrawer,
-    RoughnessClassify,
-    RoughnessRegrasp,
-    TurnGearPair,
-    WeightClassify,
+    RoughnessClassification,
+    RoughnessGuidedRegrasp,
+    WeightClassification,
 )
 
 TaskName = Literal[
-    "hardness_classify",
+    "gear_assembly",
+    "hardness_classification",
     "insert_block",
-    "insert_block_v2",
-    "insert_usb",
+    "insert_USB",
     "pull_drawer",
-    "roughness_classify",
-    "roughness_regrasp",
-    "turn_gear_pair",
-    "weight_classify",
+    "roughness_classification",
+    "roughness_guided_regrasp",
+    "weight_classification",
 ]
 
 TASKS: dict[TaskName, Task] = {
-    "hardness_classify": HardnessClassify,
+    "gear_assembly": GearAssembly,
+    "hardness_classification": HardnessClassification,
     "insert_block": InsertBlock,
-    "insert_block_v2": InsertBlockV2,
-    "insert_usb": InsertUsb,
+    "insert_USB": InsertUsb,
     "pull_drawer": PullDrawer,
-    "roughness_classify": RoughnessClassify,
-    "roughness_regrasp": RoughnessRegrasp,
-    "turn_gear_pair": TurnGearPair,
-    "weight_classify": WeightClassify,
+    "roughness_classification": RoughnessClassification,
+    "roughness_guided_regrasp": RoughnessGuidedRegrasp,
+    "weight_classification": WeightClassification,
 }

@@ -16,7 +16,7 @@ from openvitac_tasks import (
 
 class TaskLoggerTests(unittest.TestCase):
     def test_setup_accepts_logger_and_logs_summary(self) -> None:
-        task = TASKS["roughness_classify"]
+        task = TASKS["roughness_classification"]
         logger = logging.LoggerAdapter(
             logging.getLogger("openvitac.task.test"), {"task": task.name, "seed": 7}
         )
@@ -29,7 +29,7 @@ class TaskLoggerTests(unittest.TestCase):
         self.assertIn("metadata", text)
 
     def test_setup_without_logger_still_works(self) -> None:
-        task = TASKS["roughness_classify"]
+        task = TASKS["roughness_classification"]
         self.assertEqual(task.setup(7).seed, 7)
 
     def test_logger_is_not_stored_in_pure_data(self) -> None:

@@ -2,8 +2,9 @@
 yellow box.
 
 Three blocks share the scene; each episode samples one target and the expert
-inserts it into the corresponding hole.  ``insert_block_v2`` remains a registry
-alias without language-conditioned selection.  The box is static and hollow:
+inserts it into the corresponding hole.  Both published insert-block conditions
+use the ``insert_block`` identifier; language-conditioned target selection is
+not implemented.  The box is static and hollow:
 the block is carried over the hole, lowered through the top plate, released,
 and falls to the box floor.
 """
@@ -59,7 +60,7 @@ _BLOCK_XY_NOISE = 0.015
 _GRASP_HEIGHT = _BLOCK_HEIGHT * 0.5
 _APPROACH_CLEARANCE = 0.050
 # The approach arrives horizontally over a standing 40 mm block; clear its top
-# (the pad face is 25.3 mm tall, see roughness_regrasp) before descending.
+# (the pad face is 25.3 mm tall, see roughness_guided_regrasp) before descending.
 _TRANSIT_CLEARANCE = 0.09
 # Pad-face widths at the grasp height: cube 40.0 mm; half cylinder 25.0 mm
 # (flat face at y=-10.608 mm to the arc apex at +14.392 mm); hexagonal prism
@@ -367,7 +368,7 @@ class _BlockExpert:
             pos, quat = world.arm.ee_pose()
             spec = _target(world)
             # Parallel the pad plane to the target block's +/-y face; see
-            # roughness_classify for the lever-arm rationale.
+            # roughness_classification for the lever-arm rationale.
             _, bquat = world.object_pose(spec.actor)
             quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
             state = replace(
@@ -561,6 +562,3 @@ InsertBlock = Task(
     joint_pos=_TASK_INITIAL_JOINT_POS,
     required_capabilities=frozenset({"binary_close"}),
 )
-
-# v2 is a registry alias; language-conditioned target selection is not implemented.
-InsertBlockV2 = replace(InsertBlock, name="insert_block_v2")
