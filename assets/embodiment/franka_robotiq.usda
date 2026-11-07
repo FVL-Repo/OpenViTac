@@ -1,0 +1,8 @@
+#usda 1.0
+(
+    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
+    subLayers = [
+        @robotiq_pad_proxy.usda@,
+        @franka_robotiq/Robots/Franka/XenseWS/Gripper/uipc_franka_robotiq_xensews.usda@
+    ]
+)

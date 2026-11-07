@@ -1,0 +1,13 @@
+[project]
+name = "openvitac-spec"
+version = "0.0.0"
+description = "OpenViTac pure-data scene and embodiment specs"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "openvitac_spec"

@@ -1,0 +1,23 @@
+[project]
+name = "openvitac-cli"
+version = "0.0.0"
+description = "OpenViTac command-line interface"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "cyclopts>=5.2",
+    "imageio-ffmpeg>=0.6.0",
+    "openvitac-data",
+    "openvitac-sim",
+    "openvitac-tactile",
+    "openvitac-tasks",
+]
+
+[project.scripts]
+openvitac = "openvitac_cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "openvitac_cli"

@@ -1,0 +1,431 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            dictionary Front = {
+                double3 position = (5, 0, 0)
+                double radius = 5
+            }
+            dictionary Perspective = {
+                double3 position = (0.32161637346564553, -0.05508527584709199, 1.1184707132522371)
+                double3 target = (-3.4710937656976726, -0.44479240796042, -1.8494100064668215)
+            }
+            dictionary Right = {
+                double3 position = (0, -5, 0)
+                double radius = 5
+            }
+            dictionary Top = {
+                double3 position = (0, 0, 5)
+                double radius = 5
+            }
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        dictionary metricsAssembler = {
+            dictionary "/panda/d435" = {
+            }
+            dictionary "/panda/gelpad" = {
+            }
+            int version = 1
+        }
+        dictionary navmeshSettings = {
+            double agentHeight = 180
+            double agentRadius = 20
+            bool excludeRigidBodies = 1
+            int ver = 1
+            double voxelCeiling = 460
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./uipc_gelpads_high_res_wrist.usd"
+            dictionary locked = {
+            }
+            dictionary muteness = {
+            }
+        }
+        dictionary renderSettings = {
+        }
+    }
+    defaultPrim = "panda"
+    endTimeCode = 100
+    metersPerUnit = 1
+    startTimeCode = 0
+    timeCodesPerSecond = 60
+    upAxis = "Z"
+)
+
+def PhysicsScene "physicsScene"
+{
+}
+
+def "FlatGrid" (
+    prepend references = @http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/2023.1.0/Isaac/Environments/Grid/default_environment.usd@
+)
+{
+    over "SphereLight" (
+        active = false
+    )
+    {
+    }
+
+    def DomeLight "DomeLight" (
+        prepend apiSchemas = ["ShapingAPI"]
+    )
+    {
+        float inputs:intensity = 1000
+        float inputs:shaping:cone:angle = 180
+        float inputs:shaping:cone:softness
+        float inputs:shaping:focus
+        color3f inputs:shaping:focusTint
+        asset inputs:shaping:ies:file
+        token inputs:texture:format = "latlong"
+        quatd xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+}
+
+over "panda" (
+    prepend references = @./panda_arm_hand/panda_arm_hand.usd@
+)
+{
+    bool physxArticulation:enabledSelfCollisions = 1
+    int physxArticulation:solverVelocityIterationCount = 1
+    quatd xformOp:orient = (0.9461627006530762, 0, 0, -0.3236914277076721)
+    double3 xformOp:scale = (1, 1, 1)
+    double3 xformOp:translate = (0, 0, 0)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+    over "panda_link0"
+    {
+        over "panda_joint1"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link1"
+    {
+        over "panda_joint2"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link2"
+    {
+        over "panda_joint3"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link3"
+    {
+        over "panda_joint4"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link4"
+    {
+        over "panda_joint5"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link5"
+    {
+        token visibility = "inherited"
+
+        over "panda_joint6"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link6"
+    {
+        over "panda_joint7"
+        {
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+    }
+
+    over "panda_link7"
+    {
+    }
+
+    over "panda_link8"
+    {
+        float physics:mass = 0.1
+    }
+
+    over "panda_hand"
+    {
+        over "panda_finger_joint1"
+        {
+            bool physics:jointEnabled = 1
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
+        }
+
+        over "panda_finger_joint2"
+        {
+            bool physics:jointEnabled = 1
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
+        }
+
+        def PhysicsFixedJoint "wrist_camera" (
+            active = true
+            instanceable = false
+            kind = ""
+        )
+        {
+            rel physics:body0 = </panda/panda_hand>
+            rel physics:body1 = </panda/WristCamera>
+            float physics:breakForce = 3.4028233e30
+            float physics:breakTorque = 3.4028233e30
+            uniform bool physics:excludeFromArticulation = 0
+            bool physics:jointEnabled = 1
+            point3f physics:localPos0 = (6.1747324e-10, -8.808347e-10, -1.110223e-16)
+            point3f physics:localPos1 = (0.09358327, 0.09245222, 0.08740536)
+            quatf physics:localRot0 = (1, -3.51006e-18, 3.276206e-18, -6.4181377e-10)
+            quatf physics:localRot1 = (-1.451128e-17, -0.54206693, 0.8403353, 6.0424075e-17)
+        }
+    }
+
+    over "panda_leftfinger"
+    {
+        token visibility = "inherited"
+
+        def PhysicsFixedJoint "gsmini_left_joint"
+        {
+            rel physics:body0 = </panda/gelsight_mini_case_left>
+            rel physics:body1 = </panda/panda_leftfinger>
+            float physics:breakForce = inf
+            float physics:breakTorque = inf
+            uniform bool physics:excludeFromArticulation = 0
+            point3f physics:localPos0 = (-0.060012627, 1.3127625e-7, 0.03158883)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (-0.49999997, 0.5, -0.5, 0.5)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+
+    over "panda_rightfinger"
+    {
+        token visibility = "inherited"
+
+        def PhysicsFixedJoint "gsmini_right_joint"
+        {
+            rel physics:body0 = </panda/gelsight_mini_case_right>
+            rel physics:body1 = </panda/panda_rightfinger>
+            float physics:breakForce = inf
+            float physics:breakTorque = inf
+            point3f physics:localPos0 = (0.060009975, 4.868839e-8, 0.031752303)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.49999997, 0.5, -0.5, -0.5)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+
+    def "gelsight_mini_case_left" (
+        prepend payload = @./Sensors_GelSight_Mini_Case.usd@
+    )
+    {
+        float physics:mass = 0.01
+        token visibility = "inherited"
+        quatf xformOp:orient = (0.27059805, -0.65328145, 0.27059805, 0.6532815)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.11033674212774487, -0.022336632451046307, 0.8075873937626775)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "case"
+        {
+            token visibility = "inherited"
+
+            over "mesh"
+            {
+            }
+        }
+
+        # Rigid proxy for the soft gel-pad bulb: the ported gelpad meshes are UIPC
+        # attachments with no collider, so without this the 0.131 m grasp TCP closes
+        # on air (the rigid housing inner faces stay ~9 mm from a thin USB).
+        def Cube "pad_proxy" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 0.03
+            quatf xformOp:orient = (0.489042, -0.500019, -0.51364, 0.496984)
+            double3 xformOp:translate = (0.00532, -0.00023, 0.01489)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            token visibility = "invisible"
+        }
+
+        over "plate"
+        {
+            token visibility = "inherited"
+
+            over "plate"
+            {
+                token visibility = "inherited"
+                double3 xformOp:scale = (0.0265, 0.025, 0.002)
+            }
+
+            over "mesh"
+            {
+                token visibility = "invisible"
+            }
+        }
+
+        over "Camera"
+        {
+            token visibility = "invisible"
+        }
+    }
+
+    def "gelsight_mini_case_right" (
+        prepend payload = @./Sensors_GelSight_Mini_Case.usd@
+    )
+    {
+        float physics:mass = 0.01
+        token visibility = "inherited"
+        quatf xformOp:orient = (0.27059805, 0.65328145, -0.27059805, 0.6532815)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.0655477488572413, 0.022452250661094502, 0.8075900458313406)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "plate"
+        {
+            token visibility = "inherited"
+
+            over "plate"
+            {
+                token visibility = "inherited"
+                double3 xformOp:scale = (0.0265, 0.0225, 0.002)
+            }
+
+            over "mesh"
+            {
+                token visibility = "invisible"
+            }
+        }
+
+        over "case"
+        {
+            token visibility = "inherited"
+
+            over "mesh"
+            {
+            }
+        }
+
+        def Cube "pad_proxy" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 0.03
+            quatf xformOp:orient = (-0.51364, 0.496984, -0.489042, 0.500019)
+            double3 xformOp:translate = (-0.00467, -0.00005, 0.0151)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            token visibility = "invisible"
+        }
+
+        over "Camera"
+        {
+            token visibility = "invisible"
+        }
+    }
+
+    def "gelpad_left" (
+        prepend payload = @./Sensors_GelSight_Mini_Gelpad_high_res.usd@
+    )
+    {
+        float3 xformOp:rotateXYZ = (90, 90, -135)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.09313222020864487, -0.00524018332362175, 0.8076002597808838)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        over "mesh"
+        {
+            custom uint[] attachment_indices = []
+            custom vector3f[] attachment_offsets = []
+        }
+    }
+
+    def "gelpad_right" (
+        prepend payload = @./Sensors_GelSight_Mini_Gelpad_high_res.usd@
+    )
+    {
+        float3 xformOp:rotateXYZ = (90, -90, 45)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.08237972110509872, 0.005400944035500288, 0.8080364465713501)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        over "mesh"
+        {
+            custom uint[] attachment_indices = []
+            custom vector3f[] attachment_offsets = []
+        }
+    }
+
+    def "WristCamera" (
+        active = true
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyAPI"]
+        delete payload = @./WristCamera.usda@
+        prepend payload = @./WristCamera.usd@
+    )
+    {
+        bool physics:kinematicEnabled = 0
+        bool physics:rigidBodyEnabled = 1
+        float3 xformOp:rotateXYZ = (0, 0, 159.35109)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.20817375707697683, 0.053511678010775304, 0.8385946361287533)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        over "Camera" (
+            active = true
+        )
+        {
+            float focalLength = 1.5
+            float horizontalAperture = 3
+            custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -0.09635269111793528)
+            token visibility = "invisible"
+            quatf xformOp:orient = (0.21458794, -0.028251039, -0.1274322, 0.96794367)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.07644610010979583, 0.05320889805378959, 0.02467079308763187)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        over "mesh" (
+            active = true
+        )
+        {
+            over "ID3"
+            {
+                quatf xformOp:orient = (0.69143337, 0.69143337, -0.14805377, 0.14805377)
+                float3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0.08150490673909691, -0.004190792149953215, -0.10014695814105136)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+
+        over "Looks" (
+            active = true
+        )
+        {
+        }
+    }
+}
+

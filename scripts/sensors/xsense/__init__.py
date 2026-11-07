@@ -1,1 +1,0 @@
-"""XSense sensor diagnostics."""
