@@ -94,3 +94,7 @@ textures.zip
 
 # Version textures moved with the empty-can selection assets.
 !/assets/objects/task_assets/empty_can_selection/*.png
+
+# OpenViTac training data, pretrained weights, and isolated environment
+/weights/
+/training/openpi_runtime/.venv/

@@ -175,9 +175,14 @@ For larger runs and policy learning, continue with:
 - [Serial, balanced, and parallel data collection](docs/Usage.md#data-collection)
 - [HDF5 observation schema](docs/Collection.md)
 - [ACT preprocessing and training](docs/Usage.md#training)
+- [π0.5 and OpenVTLA simulation training](training/README.md)
 - [Policy rollout and evaluation](docs/Usage.md#inference--rollout)
 
 > **Data paths:** ACT preprocessing expects `data/<task>/<config>`. When preparing ACT datasets, set `save_dir: ./data` in the collection configuration or provide a link to your collected dataset, as described in the workflow guide.
+
+### Train π0.5 or OpenVTLA
+
+The [simulation training guide](training/README.md) covers the separate training environment, pretrained weight locations, HDF5-to-LeRobot conversion, and full fine-tuning for both policies. The training runtime is included in this repository; the simulator and training environments use different Python and CUDA versions.
 
 ## Documentation
 
@@ -185,6 +190,7 @@ For larger runs and policy learning, continue with:
 | :--- | :--- |
 | Set up the simulator and dependencies | [Installation](docs/Installation.md) |
 | Collect data, configure sensors, and train ACT | [Workflow guide](docs/Usage.md) |
+| Fine-tune π0.5 or OpenVTLA on simulation data | [Simulation training](training/README.md) |
 | Understand observations and saved trajectories | [Data collection and schema](docs/Collection.md) |
 | Add a task | [Task creation](docs/TaskCreation.md) |
 | Connect a new policy | [Policy deployment](docs/Deploy.md) |
@@ -203,6 +209,7 @@ OpenViTac/
 ├── scripts/           # Collection, evaluation, installation, and RFCL
 ├── bash_scripts/      # Batch workflows and task-specific conditions
 ├── policy/            # Local learning baselines and remote policy clients
+├── training/          # π0.5 and OpenVTLA simulation training
 ├── encoder/           # Tactile representation learning
 ├── docs/              # Guides and project figures
 ├── tests/             # Task and learning workflow tests
