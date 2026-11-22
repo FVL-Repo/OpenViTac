@@ -25,12 +25,13 @@ from openvitac_spec import (
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
 from ..motion import (
-    HAND_TO_GEL_FACE,
     Hold,
     Move,
     advance_move,
     align_pad_to_face,
     begin_move,
+    ee_for_tool_center,
+    grasp_depth,
     pad_close_q,
     quat_rotate,
 )
@@ -60,11 +61,10 @@ _GRASP_HEIGHT = 0.035
 # the commanded close comes from the block width (15.00 mm, black_smooth_cuboid
 # bounds +/-0.0075 m) through the shared close law.
 _BLOCK_WIDTH = 0.01500
-_CLOSE_Q = pad_close_q(_BLOCK_WIDTH)
 _APPROACH_CLEARANCE = 0.05
-# The approach arrives horizontally over a standing 80 mm block.  The pad face
-# is 25.3 mm tall, so at _APPROACH_CLEARANCE the pad's lower edge is inside the
-# block (see roughness_guided_regrasp); clear the block top instead.
+# The approach arrives horizontally over a standing 80 mm block.  The pads are
+# taller than _APPROACH_CLEARANCE leaves room for, so their lower edge would be
+# inside the block (see roughness_guided_regrasp); clear the block top instead.
 _TRANSIT_CLEARANCE = 0.09
 _LIFT_HEIGHT = 0.06
 _TARGET_BLOCK_Z = 0.01
@@ -163,36 +163,43 @@ def _enter(
     """Compute ``phase``'s targets from the live world and its first action."""
     block = _BLOCK_BY_LABEL[state.label]
     plate = _PLATE_BY_LABEL[state.label]
+    # Every goal below is a *tool-center* point: the asset's pad midpoint, which
+    # ``ee_for_tool_center`` turns into the EE pose the IK solver wants.
+    tool = world.arm.tool
     match phase:
         case _WeightPhase.PREGRASP:
             (bx, by, bz), _ = world.object_pose(block)
-            hand_z = bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (bx, by, hand_z + _TRANSIT_CLEARANCE)
+            grasp = (bx, by, bz + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                grasp, state.quat, tool, clearance=_TRANSIT_CLEARANCE
+            )
             ticks = 120
         case _WeightPhase.DESCEND:
             (bx, by, bz), _ = world.object_pose(block)
-            hand_z = bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (bx, by, hand_z)
+            grasp = (bx, by, bz + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(grasp, state.quat, tool)
             ticks = _MOVE_TICKS
         case _WeightPhase.CLOSE:
-            # Gel face _GRASP_OVERTRAVEL into the block per side.
-            qpos = _CLOSE_Q
+            # Pad face GRASP_OVERTRAVEL into the block per side.
+            qpos = pad_close_q(tool, _BLOCK_WIDTH)
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
         case _WeightPhase.LIFT:
             (bx, by, bz), _ = world.object_pose(block)
-            hand_z = bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (bx, by, hand_z + _LIFT_HEIGHT)
+            grasp = (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
+            goal = ee_for_tool_center(grasp, state.quat, tool)
             ticks = 90
         case _WeightPhase.CARRY:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (tx, ty, place_z + _APPROACH_CLEARANCE)
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
+            )
             ticks = 120
         case _WeightPhase.PLACE:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (tx, ty, place_z)
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(place, state.quat, tool)
             ticks = 90
         case _WeightPhase.OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -200,8 +207,10 @@ def _enter(
             return state, _action(state)
         case _WeightPhase.RETRACT:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT + HAND_TO_GEL_FACE
-            goal = (tx, ty, place_z + _APPROACH_CLEARANCE)
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
+            )
             ticks = 90
         case _WeightPhase.INIT | _WeightPhase.DONE:
             raise AssertionError(f"{phase} has no entry targets")
@@ -243,7 +252,9 @@ class _WeightExpert:
             # Parallel the pad plane to the selected block's +/-y face; see
             # roughness_classification for the lever-arm rationale.
             _, bquat = world.object_pose(_BLOCK_BY_LABEL[_label(world)])
-            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
+            quat = align_pad_to_face(
+                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+            )
             state = replace(
                 state,
                 label=_label(world),
@@ -310,7 +321,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
             tz
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + grasp_depth(world.arm.tool)
             + _APPROACH_CLEARANCE
         )
         retracted = (

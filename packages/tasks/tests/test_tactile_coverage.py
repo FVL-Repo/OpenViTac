@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+from _tool import gsmini_tool
 from pxr import Usd, UsdGeom
 
 from openvitac_spec import Actor
@@ -104,26 +105,29 @@ HULLS: dict[
 }
 HULL_BBOX_TOL_M = 5e-4
 
-CLOSE_CONST = {
+# Where each task keeps the grasp *width* it commands from.  The command itself
+# lives nowhere in the task: it comes from the asset's close law, which is what
+# the check below recomputes.
+WIDTH_CONST = {
     "insert_block": (
         "openvitac_tasks.tasks.insert_block",
-        "_CLOSE_Q_BY_BLOCK",
+        "_BLOCK_WIDTH_BY_ACTOR",
     ),
     "pull_drawer": (
         "openvitac_tasks.tasks.pull_drawer",
-        "_CLOSE_Q",
+        "_HANDLE_WIDTH",
     ),
     "roughness_classification": (
         "openvitac_tasks.tasks.roughness_classification",
-        "_CLOSE_Q_BY_BLOCK",
+        "_BLOCK_WIDTH_BY_NAME",
     ),
     "roughness_guided_regrasp": (
         "openvitac_tasks.tasks.roughness_guided_regrasp",
-        "_CLOSE_Q_BY_BLOCK",
+        "_BLOCK_WIDTH_BY_NAME",
     ),
     "weight_classification": (
         "openvitac_tasks.tasks.weight_classification",
-        "_CLOSE_Q",
+        "_BLOCK_WIDTH",
     ),
 }
 
@@ -384,18 +388,32 @@ class TactileCoverageTests(unittest.TestCase):
 
     def _check_close(self, task: Any, canon: str) -> None:
         table = CLOSE[canon]
-        module_name, attr = CLOSE_CONST[canon]
+        module_name, attr = WIDTH_CONST[canon]
         module = importlib.import_module(module_name)
-        const = getattr(module, attr)
-        if isinstance(const, dict):
+        widths = getattr(module, attr)
+        tool = gsmini_tool()
+        if isinstance(widths, dict):
             self.assertEqual(
-                set(const), set(table), f"{task.name}: close-law actors drifted"
+                set(widths), set(table), f"{task.name}: close-law actors drifted"
             )
-            for actor, (_width, _overtravel, q) in table.items():
+            for actor, (width, overtravel, q_) in table.items():
                 self.assertAlmostEqual(
-                    const[actor],
-                    q,
+                    widths[actor],
+                    width,
                     places=9,
+                    msg=f"{task.name}:{actor}: grasp width drifted",
+                )
+                self.assertAlmostEqual(
+                    pad_close_q(tool, widths[actor], overtravel),
+                    pad_close_q(tool, width, overtravel),
+                    places=12,
+                    msg=f"{task.name}:{actor}: close law is not width-derived",
+                )
+                # The recorded command must be what the asset's law produces.
+                self.assertAlmostEqual(
+                    pad_close_q(tool, width, overtravel),
+                    q_,
+                    places=7,
                     msg=f"{task.name}:{actor}: commanded close q drifted "
                     "from the recorded value",
                 )
@@ -408,10 +426,12 @@ class TactileCoverageTests(unittest.TestCase):
                 1,
                 f"{task.name}: one constant cannot cover different widths",
             )
+            width, overtravel, q_ = next(iter(table.values()))
+            self.assertAlmostEqual(widths, width, places=9)
             self.assertAlmostEqual(
-                const,
+                pad_close_q(tool, widths, overtravel),
                 commands.pop(),
-                places=9,
+                places=7,
                 msg=f"{task.name}: commanded close q drifted",
             )
         axis = CLOSE_EXTENT_AXIS[canon]
@@ -433,9 +453,9 @@ class TactileCoverageTests(unittest.TestCase):
                     "not the usd extent",
                 )
             self.assertAlmostEqual(
-                pad_close_q(width, overtravel),
+                pad_close_q(gsmini_tool(), width, overtravel),
                 q,
-                places=9,
+                places=7,
                 msg=f"{task.name}:{actor_name}: close q is not width-derived",
             )
 

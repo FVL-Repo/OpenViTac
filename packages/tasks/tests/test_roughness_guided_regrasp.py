@@ -6,18 +6,25 @@ import logging
 import unittest
 from typing import Any
 
+from _tool import gsmini_tool
+
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
-from openvitac_tasks.motion import HAND_TO_GEL_FACE
+from openvitac_tasks.motion import pad_close_q, tool_center
 from openvitac_tasks.tasks.roughness_guided_regrasp import (
     _APPROACH_CLEARANCE,
-    _CLOSE_Q_BY_BLOCK,
+    _BLOCK_WIDTH_BY_NAME,
     _GRASP_HEIGHT,
     _ROUGH_PLATE,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     RoughnessGuidedRegrasp,
 )
+
+_TOOL = gsmini_tool()
+_CLOSE_Q_BY_BLOCK = {
+    block: pad_close_q(_TOOL, width) for block, width in _BLOCK_WIDTH_BY_NAME.items()
+}
 
 _LEFT = (0.40, 0.12, 0.004)
 _RIGHT = (0.40, -0.12, 0.004)
@@ -69,6 +76,10 @@ class _Arm:
     def gripper(self) -> _Gripper:
         return self._world._gripper
 
+    @property
+    def tool(self) -> Any:
+        return _TOOL
+
     def ee_pose(
         self,
     ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
@@ -84,11 +95,9 @@ class _Arm:
         world.quat = quat
         world.events.append(("move", pos))
         if world.holding is not None:
-            world.blocks[world.holding] = (
-                pos[0],
-                pos[1],
-                pos[2] - HAND_TO_GEL_FACE - _GRASP_HEIGHT,
-            )
+            # The pad midpoint holds the block at the grasp height.
+            pad_x, pad_y, pad_z = tool_center(pos, quat, _TOOL)
+            world.blocks[world.holding] = (pad_x, pad_y, pad_z - _GRASP_HEIGHT)
 
 
 class _World:
@@ -203,7 +212,7 @@ class RoughnessGuidedRegraspTests(unittest.TestCase):
             _YELLOW[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + _TOOL.center_in_ee[2]
             + _APPROACH_CLEARANCE,
         )
         self.assertTrue(next(RoughnessGuidedRegrasp.success(world)))
@@ -236,7 +245,7 @@ class RoughnessGuidedRegraspTests(unittest.TestCase):
             plate[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + _TOOL.center_in_ee[2]
             + _APPROACH_CLEARANCE
         )
         self.assertGreaterEqual(world.ee[2], retract_z - _SUCCESS_Z_TOLERANCE)

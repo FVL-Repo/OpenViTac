@@ -24,7 +24,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from openvitac_spec import GripperCapability
+from openvitac_spec import GripperCapability, ToolGeometry
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -66,11 +66,22 @@ class ArmHandle(Protocol):
     World frame throughout; quaternions are XYZW.  ``ee_pose`` and
     ``set_ee_target`` address the embodiment's ``arm.ee_link`` body (the
     wrist/flange link the IK solver drives), not the tool center point between
-    the fingers.
+    the fingers; :attr:`tool` carries the asset-declared offset between the two.
     """
 
     @property
     def gripper(self) -> GripperHandle: ...
+
+    @property
+    def tool(self) -> ToolGeometry:
+        """Grasp geometry of the tool on this arm, read from the robot asset.
+
+        ``center_in_ee`` is where the asset's ``tool_center`` frame (the pad
+        midpoint) sits in the EE frame, and ``finger_command_for_gap`` is its
+        close law.  A scripted expert moves the tool-center pose and back-solves
+        the EE pose from it, instead of adding a per-gripper constant.
+        """
+        ...
 
     def ee_pose(self) -> tuple[Vec3, Quat]:
         """World pose ``(pos, quat_xyzw)`` of the arm's EE link."""

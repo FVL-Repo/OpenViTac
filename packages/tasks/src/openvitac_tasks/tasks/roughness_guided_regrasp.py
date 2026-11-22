@@ -24,12 +24,13 @@ from openvitac_spec import (
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
 from ..motion import (
-    HAND_TO_GEL_FACE,
     Hold,
     Move,
     advance_move,
     align_pad_to_face,
     begin_move,
+    ee_for_tool_center,
+    grasp_depth,
     pad_close_q,
     quat_rotate,
 )
@@ -59,15 +60,12 @@ _PLATE_SUPPORT_BOX = ((0.0, 0.0, 0.0033), (0.04, 0.04, 0.0027))
 # width through the shared close law (motion.pad_close_q); widths are the asset
 # x,y bounds (smooth +/-0.0075 m, rough +/-0.00794 m).
 _BLOCK_WIDTH_BY_NAME = {"smooth_block": 0.01500, "rough_block": 0.01588}
-_CLOSE_Q_BY_BLOCK = {
-    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_NAME.items()
-}
 _APPROACH_CLEARANCE = 0.05
 # The grasp approach and the park retract travel horizontally over a standing
-# 80 mm block (the target or the just-parked one).  The pad face is 25.3 mm
-# tall, so an approach at _APPROACH_CLEARANCE keeps the pad's lower edge
-# 7.6 mm inside the block and sweeps it over; PhysX had no pad-block collision
-# there.  Approach high enough that the whole pad clears the block top.
+# 80 mm block (the target or the just-parked one), and at _APPROACH_CLEARANCE
+# the pad's lower edge stays inside the block and sweeps it over; PhysX had no
+# pad-block collision there.  Approach high enough that the whole pad clears the
+# block top.
 _TRANSIT_CLEARANCE = 0.09
 _LIFT_HEIGHT = 0.05
 _TARGET_BLOCK_Z = 0.01
@@ -176,42 +174,44 @@ def _enter(
     phase: _RegraspPhase, world: ExpertWorld, state: _RegraspState
 ) -> tuple[_RegraspState, Action]:
     """Compute ``phase``'s targets from the live world and its first action."""
+    # Every goal below is a *tool-center* point: the asset's pad midpoint, which
+    # ``ee_for_tool_center`` turns into the EE pose the IK solver wants.
+    tool = world.arm.tool
     match phase:
         case _RegraspPhase.GRASP_APPROACH:
             (bx, by, bz), _ = world.object_pose(state.grasp_block)
-            grasp_z = bz + _GRASP_HEIGHT
-            goal = (
-                bx,
-                by,
-                grasp_z + HAND_TO_GEL_FACE + _TRANSIT_CLEARANCE,
+            grasp = (bx, by, bz + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                grasp, state.quat, tool, clearance=_TRANSIT_CLEARANCE
             )
             ticks = 100
         case _RegraspPhase.GRASP_DESCEND:
             (bx, by, bz), _ = world.object_pose(state.grasp_block)
-            grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE)
+            grasp = (bx, by, bz + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(grasp, state.quat, tool)
             ticks = _MOVE_TICKS
         case _RegraspPhase.GRASP_CLOSE:
-            # Gel face a GRASP_OVERTRAVEL into the grasped block per side.
-            qpos = _CLOSE_Q_BY_BLOCK[state.grasp_block]
+            # Pad face GRASP_OVERTRAVEL into the grasped block per side.
+            qpos = pad_close_q(tool, _BLOCK_WIDTH_BY_NAME[state.grasp_block])
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
         case _RegraspPhase.GRASP_LIFT:
             (bx, by, bz), _ = world.object_pose(state.grasp_block)
-            grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE + _LIFT_HEIGHT)
+            grasp = (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
+            goal = ee_for_tool_center(grasp, state.quat, tool)
             ticks = 90
         case _RegraspPhase.PARK_APPROACH:
             px, py, pz = state.park
-            goal = (
-                px,
-                py,
-                pz + _GRASP_HEIGHT + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            goal = ee_for_tool_center(
+                (px, py, pz + _GRASP_HEIGHT),
+                state.quat,
+                tool,
+                clearance=_APPROACH_CLEARANCE,
             )
             ticks = 70
         case _RegraspPhase.PARK_DESCEND:
             px, py, pz = state.park
-            goal = (px, py, pz + _GRASP_HEIGHT + HAND_TO_GEL_FACE)
+            goal = ee_for_tool_center((px, py, pz + _GRASP_HEIGHT), state.quat, tool)
             ticks = _MOVE_TICKS
         case _RegraspPhase.PARK_OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -219,25 +219,24 @@ def _enter(
             return state, _action(state)
         case _RegraspPhase.PARK_RETRACT:
             px, py, pz = state.park
-            goal = (
-                px,
-                py,
-                pz + _GRASP_HEIGHT + HAND_TO_GEL_FACE + _TRANSIT_CLEARANCE,
+            goal = ee_for_tool_center(
+                (px, py, pz + _GRASP_HEIGHT),
+                state.quat,
+                tool,
+                clearance=_TRANSIT_CLEARANCE,
             )
             ticks = _MOVE_TICKS
         case _RegraspPhase.PLACE_APPROACH:
             (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (
-                tx,
-                ty,
-                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
             )
             ticks = 100
         case _RegraspPhase.PLACE_DESCEND:
             (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (tx, ty, place_z + HAND_TO_GEL_FACE)
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(place, state.quat, tool)
             ticks = 90
         case _RegraspPhase.PLACE_OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -245,11 +244,9 @@ def _enter(
             return state, _action(state)
         case _RegraspPhase.PLACE_RETRACT:
             (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (
-                tx,
-                ty,
-                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
             )
             ticks = 90
         case _RegraspPhase.INIT | _RegraspPhase.DONE:
@@ -320,7 +317,9 @@ class _RegraspExpert:
             # roughness_classification for the lever-arm rationale.  Both blocks stay
             # axis-aligned (upright on the table), so the second grasp reuses it.
             _, bquat = world.object_pose(first_block)
-            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
+            quat = align_pad_to_face(
+                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+            )
             state = replace(
                 state,
                 grasp_block=first_block,
@@ -384,7 +383,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
             tz
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + grasp_depth(world.arm.tool)
             + _APPROACH_CLEARANCE
         )
         retracted = (

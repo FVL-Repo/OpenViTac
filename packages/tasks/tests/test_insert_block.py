@@ -10,10 +10,11 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from _tool import gsmini_tool
+
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import (
-    HAND_TO_GEL_FACE,
     hand_for_pad_midpoint,
     pad_close_q,
     pad_midpoint,
@@ -22,13 +23,17 @@ from openvitac_tasks.tasks.insert_block import (
     _BLOCK_WIDTH_BY_ACTOR,
     _BLOCK_XY_NOISE,
     _BOX_SIZE,
-    _CLOSE_Q_BY_BLOCK,
     _GRASP_HEIGHT,
     _INSERT_DEPTH,
     _RELEASE_RETRACT,
     _SETTLE_STEPS,
     InsertBlock,
 )
+
+_TOOL = gsmini_tool()
+_CLOSE_Q_BY_BLOCK = {
+    actor: pad_close_q(_TOOL, width) for actor, width in _BLOCK_WIDTH_BY_ACTOR.items()
+}
 
 _BOX = (0.48, -0.12, 0.0026)
 _ACTOR = {
@@ -102,6 +107,10 @@ class _Arm:
     @property
     def gripper(self) -> _Gripper:
         return self._world._gripper
+
+    @property
+    def tool(self) -> Any:
+        return _TOOL
 
     def ee_pose(
         self,
@@ -259,7 +268,11 @@ class InsertBlockTests(unittest.TestCase):
 
     def test_success_requires_cavity_in_box_frame(self) -> None:
         retract_z = (
-            _BOX[2] + _BOX_SIZE + HAND_TO_GEL_FACE + _RELEASE_RETRACT - _INSERT_DEPTH
+            _BOX[2]
+            + _BOX_SIZE
+            + _TOOL.center_in_ee[2]
+            + _RELEASE_RETRACT
+            - _INSERT_DEPTH
         )
         for target, actor in _ACTOR.items():
             world = _World(target)
@@ -300,7 +313,11 @@ class InsertBlockTests(unittest.TestCase):
         world.ee = (
             _BOX[0] - local[1],
             _BOX[1] + local[0],
-            _BOX[2] + _BOX_SIZE + HAND_TO_GEL_FACE + _RELEASE_RETRACT - _INSERT_DEPTH,
+            _BOX[2]
+            + _BOX_SIZE
+            + _TOOL.center_in_ee[2]
+            + _RELEASE_RETRACT
+            - _INSERT_DEPTH,
         )
         world.arm.gripper.set_target(world.arm.gripper.open_qpos)
         self.assertTrue(_fires(InsertBlock.success(world)))
@@ -340,7 +357,7 @@ class InsertBlockTests(unittest.TestCase):
         box_top = world.poses["box_with_holes_yellow"][0][2] + _BOX_SIZE
         self.assertGreaterEqual(
             world.ee[2],
-            box_top + HAND_TO_GEL_FACE + _RELEASE_RETRACT - _INSERT_DEPTH,
+            box_top + _TOOL.center_in_ee[2] + _RELEASE_RETRACT - _INSERT_DEPTH,
         )
 
     def test_expert_respects_step_budget(self) -> None:
@@ -425,7 +442,7 @@ class InsertBlockWidthTests(unittest.TestCase):
                     )
                 self.assertAlmostEqual(
                     _CLOSE_Q_BY_BLOCK[actor],
-                    pad_close_q(_BLOCK_WIDTH_BY_ACTOR[actor]),
+                    pad_close_q(_TOOL, _BLOCK_WIDTH_BY_ACTOR[actor]),
                     places=12,
                 )
 
@@ -448,8 +465,8 @@ class InsertBlockGraspPlaneTests(unittest.TestCase):
         for shape, actor in _ACTOR.items():
             bx, by, bz = _BLOCKS[actor][0]
             pad_mid = (bx, by, bz + _GRASP_HEIGHT)
-            hand = hand_for_pad_midpoint(pad_mid, quat)
-            got = pad_midpoint(hand, quat)
+            hand = hand_for_pad_midpoint(pad_mid, quat, _TOOL)
+            got = pad_midpoint(hand, quat, _TOOL)
             for g, w in zip(got, pad_mid, strict=True):
                 self.assertAlmostEqual(
                     g,
@@ -459,7 +476,7 @@ class InsertBlockGraspPlaneTests(unittest.TestCase):
                 )
             # The pre-fix target added the pad offset to world z only.
             old_mid = pad_midpoint(
-                (bx, by, bz + _GRASP_HEIGHT + HAND_TO_GEL_FACE), quat
+                (bx, by, bz + _GRASP_HEIGHT + _TOOL.center_in_ee[2]), quat, _TOOL
             )
             err = math.dist(old_mid, pad_mid)
             self.assertAlmostEqual(
@@ -474,7 +491,7 @@ class InsertBlockGraspPlaneTests(unittest.TestCase):
         half = math.radians(171.4) / 2.0
         quat = (0.0, math.sin(half), 0.0, math.cos(half))
         pad_mid = (0.40, -0.10, 0.004 + _GRASP_HEIGHT)
-        hand = hand_for_pad_midpoint(pad_mid, quat, clearance=0.09)
+        hand = hand_for_pad_midpoint(pad_mid, quat, _TOOL, clearance=0.09)
         self.assertGreater(
-            pad_midpoint(hand, quat)[2], 0.004 + _GRASP_HEIGHT + 0.08
+            pad_midpoint(hand, quat, _TOOL)[2], 0.004 + _GRASP_HEIGHT + 0.08
         )

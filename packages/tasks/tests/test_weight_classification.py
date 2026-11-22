@@ -6,20 +6,24 @@ import logging
 import unittest
 from typing import Any
 
+from _tool import gsmini_tool
+
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
-from openvitac_tasks.motion import HAND_TO_GEL_FACE
+from openvitac_tasks.motion import pad_close_q, tool_center
 from openvitac_tasks.tasks.weight_classification import (
     _APPROACH_CLEARANCE,
     _BLOCK_STANDBY_BY_LABEL,
     _BLOCK_START_POS,
-    _CLOSE_Q,
+    _BLOCK_WIDTH,
     _DENSITY_BY_LABEL,
     _GRASP_HEIGHT,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     WeightClassification,
 )
+
+_TOOL = gsmini_tool()
 
 _PLATES = {
     "blue_plate": (0.45, 0.08, 0.002),
@@ -72,6 +76,10 @@ class _Arm:
     def gripper(self) -> _Gripper:
         return self._world._gripper
 
+    @property
+    def tool(self) -> Any:
+        return _TOOL
+
     def ee_pose(
         self,
     ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
@@ -87,11 +95,9 @@ class _Arm:
         world.quat = quat
         world.events.append(("move", pos))
         if world.holding:
-            world.blocks[world.label] = (
-                pos[0],
-                pos[1],
-                pos[2] - HAND_TO_GEL_FACE - _GRASP_HEIGHT,
-            )
+            # The pad midpoint holds the block at the grasp height.
+            pad_x, pad_y, pad_z = tool_center(pos, quat, _TOOL)
+            world.blocks[world.label] = (pad_x, pad_y, pad_z - _GRASP_HEIGHT)
 
 
 class _World:
@@ -220,11 +226,12 @@ class WeightClassificationTests(unittest.TestCase):
     def test_close_position_per_block(self) -> None:
         # 15.00 mm block -> 2.936 mm (1 mm gel overtravel; measured pad-face
         # gap 7.1276 mm at q=0), and the expert commands exactly that.
-        self.assertAlmostEqual(_CLOSE_Q, 0.0029362, places=7)
+        want = pad_close_q(_TOOL, _BLOCK_WIDTH)
+        self.assertAlmostEqual(want, 0.0029362, places=7)
         world = _World("heavy")
         _run(world)
         close_q = next(event[1] for event in world.events if event[0] == "close")
-        self.assertAlmostEqual(close_q, _CLOSE_Q, places=12)
+        self.assertAlmostEqual(close_q, want, places=12)
 
     def test_success_uses_selected_label_and_plate(self) -> None:
         for label in _BLOCKS:
@@ -238,7 +245,7 @@ class WeightClassificationTests(unittest.TestCase):
                 target[2]
                 + _TARGET_BLOCK_Z
                 + _GRASP_HEIGHT
-                + HAND_TO_GEL_FACE
+                + _TOOL.center_in_ee[2]
                 + _APPROACH_CLEARANCE,
             )
             self.assertTrue(next(WeightClassification.success(world)))
@@ -258,7 +265,7 @@ class WeightClassificationTests(unittest.TestCase):
             target[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + _TOOL.center_in_ee[2]
             + _APPROACH_CLEARANCE
         )
         self.assertGreaterEqual(world.ee[2], retract_z - _SUCCESS_Z_TOLERANCE)

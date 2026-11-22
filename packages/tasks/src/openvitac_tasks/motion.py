@@ -7,6 +7,11 @@ settle tick count to reproduce the legacy re-command that let the servo settle.
 A ``Hold`` is a fixed-tick hold of the current command with a new gripper
 target.  These are motion primitives only: each task keeps its own explicit
 phase machine and no registry or policy engine lives here.
+
+Every grasp point here is a *tool-center* point, and every gripper command is
+derived from the tool contract the robot asset declares
+(``openvitac_spec.ToolGeometry``), so no helper in this module carries a
+gripper model's numbers.
 """
 
 from __future__ import annotations
@@ -14,67 +19,88 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
+from openvitac_spec import ToolGeometry
+
 from .expert import Action, ExpertWorld, Quat, Vec3
 
-# The gel flat-face centre sits this far below the panda_hand origin along hand
-# z: measured 118.0-118.6 mm over a recorded episode (forward kinematics on the
-# recorded joint_pos).  0.131, the inherited value, sat the pads 12.2 mm high.
-HAND_TO_GEL_FACE = 0.11834
-# Gel flat-face normal in the panda_hand frame (mount kinematics, independent
-# of the finger joint q); the right pad is the exact opposite.
-PAD_NORMAL_IN_HAND = (0.0, -1.0, 0.0)
-# Command-space hand origin -> gel pad midpoint along the hand's finger axis
-# (+z): measured 116.67 mm at the settled close pose in insert_USB (118.02 mm
-# geometric; the servo settles ~1.3 mm short, so targeting uses the command
-# value).  The offset must be rotated with the hand - adding it to a world
-# coordinate puts the pads centimetres off whenever the pad plane is aligned
-# to an object face.
-PAD_MID_TO_HAND = 0.11667
+# Grasp policy, not gripper geometry: how far each pad face is commanded into the
+# object it holds.  1 mm suits the blocks; pull_drawer passes 1.5 mm because its
+# drag needs the larger normal force.  How much finger travel that takes is the
+# asset's business (``ToolGeometry.pad_gap``).
+GRASP_OVERTRAVEL = 0.001
 
 
-def pad_midpoint(hand: Vec3, quat: Quat) -> Vec3:
-    """Gel pad midpoint for a commanded hand origin and orientation."""
-    axis = quat_rotate(quat, (0.0, 0.0, 1.0))
+def pad_span(tool: ToolGeometry, quat: Quat) -> Vec3:
+    """World vector from the EE origin to the pad midpoint for hand pose ``quat``.
+
+    The offset comes from the asset, so this is the grasp point for any hand
+    orientation; the offset must be rotated with the hand -- adding it to a world
+    coordinate puts the pads centimetres off whenever the pad plane is tilted to
+    an object face.
+    """
+    return quat_rotate(quat, tool.center_in_ee)
+
+
+def tool_center(ee_pos: Vec3, ee_quat: Quat, tool: ToolGeometry) -> Vec3:
+    """World point of the asset's ``tool_center`` frame (the pad midpoint)."""
+    offset = pad_span(tool, ee_quat)
     return (
-        hand[0] + axis[0] * PAD_MID_TO_HAND,
-        hand[1] + axis[1] * PAD_MID_TO_HAND,
-        hand[2] + axis[2] * PAD_MID_TO_HAND,
+        ee_pos[0] + offset[0],
+        ee_pos[1] + offset[1],
+        ee_pos[2] + offset[2],
     )
+
+
+def ee_for_tool_center(
+    point: Vec3, quat: Quat, tool: ToolGeometry, *, clearance: float = 0.0
+) -> Vec3:
+    """EE (arm link) target putting ``tool_center`` exactly on ``point``.
+
+    ``clearance`` backs the EE off further along the hand's own +z axis (the
+    direction the pads point), which is how a pre-grasp pose clears the object.
+    """
+    offset = pad_span(tool, quat)
+    back = quat_rotate(quat, (0.0, 0.0, 1.0))
+    return (
+        point[0] - offset[0] - back[0] * clearance,
+        point[1] - offset[1] - back[1] * clearance,
+        point[2] - offset[2] - back[2] * clearance,
+    )
+
+
+def grasp_depth(tool: ToolGeometry) -> float:
+    """Pad midpoint's distance from the EE origin along the hand's +z axis.
+
+    What a height gate needs when it has no hand orientation to hand: with the
+    hand pointing straight down this is the pad midpoint's drop below the EE.
+    """
+    return tool.center_in_ee[2]
+
+
+def pad_midpoint(hand: Vec3, quat: Quat, tool: ToolGeometry) -> Vec3:
+    """Pre-tool-contract name of :func:`tool_center`."""
+    return tool_center(hand, quat, tool)
 
 
 def hand_for_pad_midpoint(
-    pad_mid: Vec3, quat: Quat, *, clearance: float = 0.0
+    pad_mid: Vec3, quat: Quat, tool: ToolGeometry, *, clearance: float = 0.0
 ) -> Vec3:
-    """Hand origin putting the gel pad midpoint at ``pad_mid``.
-
-    ``clearance`` backs the hand off further along the finger axis (pre-grasp).
-    """
-    axis = quat_rotate(quat, (0.0, 0.0, 1.0))
-    back = PAD_MID_TO_HAND + clearance
-    return (
-        pad_mid[0] - axis[0] * back,
-        pad_mid[1] - axis[1] * back,
-        pad_mid[2] - axis[2] * back,
-    )
-
-
-# Close law.  On the UIPC path the gel is the contact surface, so close_qpos =
-# 0.0 drives each pad 4.376 mm into a 4.00 mm gel.  The measured pad-face gap
-# at this embodiment is PAD_GAP_AT_ZERO + PAD_GAP_PER_Q * q (q = finger
-# displacement, metres), so closing by ``overtravel`` per side needs
-# q = (width - 2 * overtravel - gap at q=0) / (2 mm per mm of q).  1 mm is the
-# default and suits the blocks; pull_drawer passes 1.5 mm because its drag
-# needs the larger normal force.
-GRASP_OVERTRAVEL = 0.001
-PAD_GAP_AT_ZERO = 0.0071276
-PAD_GAP_PER_Q = 2.0
+    """Pre-tool-contract name of :func:`ee_for_tool_center`."""
+    return ee_for_tool_center(pad_mid, quat, tool, clearance=clearance)
 
 
 def pad_close_q(
-    block_width: float, overtravel: float = GRASP_OVERTRAVEL
+    tool: ToolGeometry,
+    block_width: float,
+    overtravel: float = GRASP_OVERTRAVEL,
 ) -> float:
-    """Gripper target that presses the gel ``overtravel`` into a block."""
-    return (block_width - 2.0 * overtravel - PAD_GAP_AT_ZERO) / PAD_GAP_PER_Q
+    """Finger command that presses each pad face ``overtravel`` into a block.
+
+    The commanded pad gap is ``width - 2 * overtravel``; how much finger travel
+    that needs is the asset's close law (``ToolGeometry.finger_command_for_gap``),
+    so a wider pad stack or a different finger mechanism needs no change here.
+    """
+    return tool.finger_command_for_gap(block_width - 2.0 * overtravel)
 
 
 def quat_rotate(q: Quat, v: Vec3) -> Vec3:
@@ -110,9 +136,13 @@ def quat_mul(a: Quat, b: Quat) -> Quat:
     )
 
 
-def align_pad_to_face(quat: Quat, face_normal: Vec3) -> Quat:
-    """Shortest-arc rotation putting the pad flat face on ``face_normal``."""
-    n = quat_rotate(quat, PAD_NORMAL_IN_HAND)
+def align_pad_to_face(tool: ToolGeometry, quat: Quat, face_normal: Vec3) -> Quat:
+    """Shortest-arc rotation putting the pad flat face on ``face_normal``.
+
+    ``tool.pad_normal_in_ee`` is the asset's closing axis, so the pads line up
+    with the object face whatever frame the embodiment drives its IK in.
+    """
+    n = quat_rotate(quat, tool.pad_normal_in_ee)
     s_vec = (
         n[1] * face_normal[2] - n[2] * face_normal[1],
         n[2] * face_normal[0] - n[0] * face_normal[2],
@@ -120,7 +150,10 @@ def align_pad_to_face(quat: Quat, face_normal: Vec3) -> Quat:
     )
     s = math.sqrt(sum(c * c for c in s_vec))
     c = sum(a * b for a, b in zip(n, face_normal, strict=True))
-    if s < 1e-9:
+    # ``n`` comes from a measured joint frame, so "parallel" is never exact: an
+    # |n x f| of 1e-8 rad would otherwise be turned into a full half turn about
+    # whatever axis the dust happens to point at, i.e. a 180 deg roll flip.
+    if s < 1e-6:
         if c > 0.0:  # already parallel
             return quat
         # Antiparallel: the shortest arc is a 180 deg turn about any axis in the

@@ -8,19 +8,23 @@ import logging
 import unittest
 from typing import Any
 
+from _tool import gsmini_tool
+
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action, InsertUsb
+from openvitac_tasks.motion import tool_center
 from openvitac_tasks.tasks.insert_USB import (
     _APPROACH_CLEARANCE,
     _EE_RETRACT_Z,
     _GRASP_HEIGHT,
-    _GRASP_TCP_OFFSET,
     _INSERT_Z,
     _LIFT_HEIGHT,
     _SLOT_HEIGHT,
     _SUCCESS_EE_Z,
     _grasp_target,
 )
+
+_TOOL = gsmini_tool()
 
 _USB_START = (0.4, 0.0, 0.0085)
 _SLOT = (0.52, 0.0, 0.002)
@@ -39,19 +43,34 @@ _PHASE_ORDER = (
 )
 
 
+class _BareWorld:
+    """Just enough world for the grasp-target arithmetic (no grips)."""
+
+    class _Arm:
+        tool = _TOOL
+
+    arm = _Arm()
+
+
+_FACE_DOWN = (1.0, 0.0, 0.0, 0.0)  # 180 deg about x: the hand's +z points down
+
+
 class InsertUsbGraspTargetTests(unittest.TestCase):
     def test_target_puts_pad_midpoint_at_grasp_point(self) -> None:
         grasp = (0.4, -0.01, 0.05)
-        target = _grasp_target(*grasp)
-        pad_midpoint = tuple(target[i] - _GRASP_TCP_OFFSET[i] for i in range(3))
-        for got, want in zip(pad_midpoint, grasp, strict=True):
+        target = _grasp_target(_BareWorld(), _FACE_DOWN, *grasp)
+        for got, want in zip(
+            tool_center(target, _FACE_DOWN, _TOOL), grasp, strict=True
+        ):
             self.assertAlmostEqual(got, want, places=12)
 
     def test_clearance_only_lifts_the_target(self) -> None:
-        base = _grasp_target(0.4, 0.0, 0.05)
-        lifted = _grasp_target(0.4, 0.0, 0.05, clearance=0.01)
+        world = _BareWorld()
+        base = _grasp_target(world, _FACE_DOWN, 0.4, 0.0, 0.05)
+        lifted = _grasp_target(world, _FACE_DOWN, 0.4, 0.0, 0.05, clearance=0.01)
         self.assertAlmostEqual(lifted[2] - base[2], 0.01, places=12)
-        self.assertEqual(lifted[:2], base[:2])
+        self.assertAlmostEqual(lifted[0], base[0], places=12)
+        self.assertAlmostEqual(lifted[1], base[1], places=12)
 
 
 class _FakeGripper:
@@ -88,6 +107,7 @@ class _FakeArm:
     def __init__(self, world: _FakeWorld) -> None:
         self._world = world
         self.gripper = _FakeGripper(world)
+        self.tool = _TOOL
         self.pos = (0.4, 0.0, 0.25)
         self.quat = (0.0, 0.0, 0.0, 1.0)
 
@@ -165,21 +185,35 @@ class InsertUsbStateMachineTests(unittest.TestCase):
         self.assertEqual(tuple(phases), _PHASE_ORDER)
 
         grasp_z = _USB_START[2] + _GRASP_HEIGHT
-        descend = _grasp_target(_USB_START[0], _USB_START[1], grasp_z)
+        # The machine keeps the hand pose it found at INIT; the fake arm starts
+        # with the identity quaternion.
+        quat = world.arm.quat
+        descend = _grasp_target(world, quat, _USB_START[0], _USB_START[1], grasp_z)
         hover = _grasp_target(
-            _USB_START[0], _USB_START[1], grasp_z, clearance=_APPROACH_CLEARANCE
+            world,
+            quat,
+            _USB_START[0],
+            _USB_START[1],
+            grasp_z,
+            clearance=_APPROACH_CLEARANCE,
         )
         lift = _grasp_target(
-            _USB_START[0], _USB_START[1], grasp_z + _LIFT_HEIGHT
+            world, quat, _USB_START[0], _USB_START[1], grasp_z + _LIFT_HEIGHT
         )
         carry = _grasp_target(
+            world,
+            quat,
             _SLOT[0],
             _SLOT[1],
             _SLOT[2] + _SLOT_HEIGHT + _GRASP_HEIGHT,
             clearance=_APPROACH_CLEARANCE,
         )
         align = _grasp_target(
-            _SLOT[0], _SLOT[1], _SLOT[2] + _SLOT_HEIGHT + _GRASP_HEIGHT
+            world,
+            quat,
+            _SLOT[0],
+            _SLOT[1],
+            _SLOT[2] + _SLOT_HEIGHT + _GRASP_HEIGHT,
         )
 
         pregrasp_action = last["PREGRASP"]

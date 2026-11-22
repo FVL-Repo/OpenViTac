@@ -31,7 +31,7 @@ from ..motion import (
     Move,
     advance_move,
     begin_move,
-    hand_for_pad_midpoint,
+    ee_for_tool_center,
     pad_close_q,
     quat_conjugate,
     quat_mul,
@@ -70,9 +70,9 @@ _UPPER_DRAWER_POS = _add(
 # Grasp geometry for the upper drawer's front post (the handle is a 20 mm wide,
 # 20 mm tall rectangular nub at the drawer front, protruding along local +y).
 _HANDLE_POS = (0.0, 0.124, 0.025)  # m, upper drawer local frame
-# The gripping pad midpoint is 5 mm behind the handle's world-x centre; this
-# clears the GsMini housing from the drawer face while keeping the pads on the
-# 25 mm-deep nub.
+# The gripper's pad midpoint is 5 mm behind the handle's world-x centre: the
+# tool hangs its sensor housings in front of the pads, and this keeps them off
+# the drawer face while the pads stay on the 25 mm-deep nub.
 _GRASP_BACKOFF_X = 0.005  # m
 _APPROACH_DISTANCE = 0.08  # m, pre-grasp back-off opposite the finger axis
 _PULL_SEGMENT = 0.02  # m along world -x per segmented stroke
@@ -114,9 +114,9 @@ _UPPER_DRAWER_DENSITY = 205.7
 # default (7.85 N).
 _GRASP_OVERTRAVEL = 0.0015
 _HANDLE_WIDTH = 0.020
-_CLOSE_Q = pad_close_q(_HANDLE_WIDTH, _GRASP_OVERTRAVEL)
 
-# Nominal arm pose: GsMini default plus joint7 = 0.741, pinned explicitly.
+# Nominal arm pose; the gripper opening comes from the embodiment, which is the
+# side that knows which tool is mounted.
 _TASK_INITIAL_JOINT_POS = {
     "panda_joint1": -0.010809095,
     "panda_joint2": 0.096037410,
@@ -125,7 +125,6 @@ _TASK_INITIAL_JOINT_POS = {
     "panda_joint5": 0.035354517,
     "panda_joint6": 2.500859022,
     "panda_joint7": 0.741,
-    "panda_finger.*": 0.02,
 }
 
 
@@ -135,13 +134,16 @@ def _handle_world(world: ExpertWorld) -> Vec3:
     return _add(pos, quat_rotate(quat, _HANDLE_POS))
 
 
-def _hand_target(handle: Vec3, quat: Quat, *, clearance: float) -> Vec3:
+def _hand_target(
+    world: ExpertWorld, handle: Vec3, quat: Quat, *, clearance: float
+) -> Vec3:
     """Hand-origin target whose pad midpoint sits at ``handle``.
 
-    ``motion.hand_for_pad_midpoint`` places the pads on the handle along the
-    finger axis; the extra back-off clears the GsMini housing from the drawer.
+    ``motion.ee_for_tool_center`` places the pads on the handle along the hand's
+    own axis with the asset's offset; the extra back-off in x keeps the sensor
+    housings off the drawer face.
     """
-    hx, hy, hz = hand_for_pad_midpoint(handle, quat, clearance=clearance)
+    hx, hy, hz = ee_for_tool_center(handle, quat, world.arm.tool, clearance=clearance)
     return (hx - _GRASP_BACKOFF_X, hy, hz)
 
 
@@ -207,14 +209,18 @@ def _enter(
             return state, _action(state)
         case _PullPhase.APPROACH:
             handle = _handle_world(world)
-            goal = _hand_target(handle, state.quat, clearance=_APPROACH_DISTANCE)
+            goal = _hand_target(
+                world, handle, state.quat, clearance=_APPROACH_DISTANCE
+            )
             ticks = 200
         case _PullPhase.DESCEND:
             handle = _handle_world(world)
-            goal = _hand_target(handle, state.quat, clearance=0.0)
+            goal = _hand_target(world, handle, state.quat, clearance=0.0)
             ticks = 250
         case _PullPhase.CLOSE:
-            qpos = _CLOSE_Q
+            qpos = pad_close_q(
+                world.arm.tool, _HANDLE_WIDTH, _GRASP_OVERTRAVEL
+            )
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(300))
             return state, _action(state)
         case _PullPhase.PULL:

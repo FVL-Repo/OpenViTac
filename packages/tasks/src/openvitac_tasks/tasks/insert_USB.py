@@ -19,6 +19,7 @@ from openvitac_spec import (
 
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
+from ..motion import ee_for_tool_center
 
 _HEAD_CAM_QUAT_XYZW = (0.310977, 0.562556, 0.670428, 0.370608)
 
@@ -37,14 +38,6 @@ _SLOT_HOLE_BOTTOM = 0.0050  # hole floor above the slot origin
 _INSERT_Z = max(_SLOT_HOLE_BOTTOM, _SLOT_HEIGHT - _PLUG_HEIGHT)
 # Hover above the target opening before descending.
 _APPROACH_CLEARANCE = 0.010
-# Commanded hand origin -> pad grasp midpoint. Measured at the settled close
-# pose (insert_USB seed 0, 120 Hz): hand (0.400640, -0.000036, 0.182223), pad
-# midpoint (0.397410, 0.002730, 0.064201). The actual hand->pad distance is
-# 118.02 mm, but the command interface settles ~1.35 mm high and ~0.64 mm in
-# +x, so the command-space offset is 116.67 mm. The 0.0584 m bare finger
-# offset drives the GsMini housings into the table; UIPC gelpads are
-# attachment meshes, so the authored USD pose cannot re-derive this.
-_GRASP_TCP_OFFSET = (0.00259, -0.00273, 0.11667)
 # Retract clear of the released USB so the success gate sees an open gripper.
 _EE_RETRACT_Z = 0.16
 
@@ -89,18 +82,21 @@ _START_SUPPORT_BOXES = (
 
 
 def _grasp_target(
+    world: ExpertWorld,
+    quat: Quat,
     grasp_x: float,
     grasp_y: float,
     grasp_z: float,
     *,
     clearance: float = 0.0,
-) -> tuple[float, float, float]:
-    """Commanded hand pose whose settled pad midpoint is at the grasp point."""
-    offset_x, offset_y, offset_z = _GRASP_TCP_OFFSET
-    return (
-        grasp_x + offset_x,
-        grasp_y + offset_y,
-        grasp_z + offset_z + clearance,
+) -> Vec3:
+    """Commanded hand pose whose pad midpoint is at the grasp point.
+
+    The hand-to-pad offset is the asset's (``ToolGeometry.center_in_ee``), rotated
+    with the hand; nothing here is a per-gripper calibration.
+    """
+    return ee_for_tool_center(
+        (grasp_x, grasp_y, grasp_z), quat, world.arm.tool, clearance=clearance
     )
 
 
@@ -231,14 +227,25 @@ def _enter(
                 grasp_y=uy,
                 grasp_z=grasp_z,
                 ee_pos=_grasp_target(
-                    ux, uy, grasp_z, clearance=_APPROACH_CLEARANCE
+                    world,
+                    state.ee_quat,
+                    ux,
+                    uy,
+                    grasp_z,
+                    clearance=_APPROACH_CLEARANCE,
                 ),
             )
         case _UsbPhase.DESCEND:
             state = replace(
                 state,
                 phase=phase,
-                ee_pos=_grasp_target(state.grasp_x, state.grasp_y, state.grasp_z),
+                ee_pos=_grasp_target(
+                    world,
+                    state.ee_quat,
+                    state.grasp_x,
+                    state.grasp_y,
+                    state.grasp_z,
+                ),
             )
         case _UsbPhase.CLOSE:
             state = replace(
@@ -253,7 +260,11 @@ def _enter(
                 state,
                 phase=phase,
                 ee_pos=_grasp_target(
-                    state.grasp_x, state.grasp_y, state.grasp_z + _LIFT_HEIGHT
+                    world,
+                    state.ee_quat,
+                    state.grasp_x,
+                    state.grasp_y,
+                    state.grasp_z + _LIFT_HEIGHT,
                 ),
             )
         case _UsbPhase.CARRY:
@@ -265,6 +276,8 @@ def _enter(
                 slot_y=sy,
                 slot_z=sz,
                 ee_pos=_grasp_target(
+                    world,
+                    state.ee_quat,
                     sx,
                     sy,
                     sz + _SLOT_HEIGHT + _GRASP_HEIGHT,
@@ -276,6 +289,8 @@ def _enter(
                 state,
                 phase=phase,
                 ee_pos=_grasp_target(
+                    world,
+                    state.ee_quat,
                     state.slot_x,
                     state.slot_y,
                     state.slot_z + _SLOT_HEIGHT + _GRASP_HEIGHT,

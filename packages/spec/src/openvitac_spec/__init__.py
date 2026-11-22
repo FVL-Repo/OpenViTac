@@ -41,6 +41,7 @@ from .sensor import (
     neote_pair,
     xense_pair,
 )
+from .tool import CONTRACT_KEY, ToolGeometry, read_tool_geometry
 from .types import (
     IDENTITY_TRANSFORM,
     IDENTITY_XYZW,
@@ -52,6 +53,7 @@ from .types import (
 )
 
 __all__ = [
+    "CONTRACT_KEY",
     "FRANKA_PANDA_GSMINI",
     "FRANKA_ROBOTIQ",
     "IDENTITY_TRANSFORM",
@@ -86,10 +88,12 @@ __all__ = [
     "SensorKind",
     "SettleProtocol",
     "StreamKind",
+    "ToolGeometry",
     "Transform",
     "Vec3",
     "XenseWSSensor",
     "gsmini_pair",
     "neote_pair",
+    "read_tool_geometry",
     "xense_pair",
 ]

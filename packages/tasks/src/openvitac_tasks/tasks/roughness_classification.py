@@ -24,12 +24,13 @@ from openvitac_spec import (
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
 from ..motion import (
-    HAND_TO_GEL_FACE,
     Hold,
     Move,
     advance_move,
     align_pad_to_face,
     begin_move,
+    ee_for_tool_center,
+    grasp_depth,
     pad_close_q,
     quat_rotate,
 )
@@ -58,10 +59,6 @@ _GRASP_HEIGHT = 0.035
 # black_rough_cuboid.usd +/-0.00794 m).  The gel is the contact surface on the
 # UIPC path, so a blind close would crush it.
 _BLOCK_WIDTH_BY_NAME = {"smooth_block": 0.01500, "rough_block": 0.01588}
-_CLOSE_Q_BY_BLOCK = {
-    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_NAME.items()
-}
-_GEL_THICKNESS = 0.004
 # Neither cuboid USD authors a mass density; 1e3 kg/m^3 is the PhysX default
 # and the UIPC bridge default, so the explicit value only pins the path.
 _BLOCK_DENSITY = 1.0e3
@@ -150,43 +147,43 @@ def _enter(
     """Compute ``phase``'s targets from the live world and its first action."""
     block = _BLOCK_BY_LABEL[state.label]
     plate = _PLATE_BY_LABEL[state.label]
+    # Every goal below is a *tool-center* point: the asset's pad midpoint, which
+    # ``ee_for_tool_center`` turns into the EE pose the IK solver wants.
+    tool = world.arm.tool
     match phase:
         case _RoughnessPhase.PREGRASP:
             (bx, by, bz), _ = world.object_pose(block)
-            grasp_z = bz + _GRASP_HEIGHT
-            goal = (
-                bx,
-                by,
-                grasp_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            grasp = (bx, by, bz + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                grasp, state.quat, tool, clearance=_APPROACH_CLEARANCE
             )
             ticks = 120
         case _RoughnessPhase.DESCEND:
             (bx, by, bz), _ = world.object_pose(block)
-            grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE)
+            grasp = (bx, by, bz + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(grasp, state.quat, tool)
             ticks = _MOVE_TICKS
         case _RoughnessPhase.CLOSE:
-            qpos = _CLOSE_Q_BY_BLOCK[block]  # 1 mm gel overtravel per side
+            # Pad face GRASP_OVERTRAVEL into the grasped block per side.
+            qpos = pad_close_q(tool, _BLOCK_WIDTH_BY_NAME[block])
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
             return state, _action(state)
         case _RoughnessPhase.LIFT:
             (bx, by, bz), _ = world.object_pose(block)
-            grasp_z = bz + _GRASP_HEIGHT
-            goal = (bx, by, grasp_z + HAND_TO_GEL_FACE + _LIFT_HEIGHT)
+            grasp = (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
+            goal = ee_for_tool_center(grasp, state.quat, tool)
             ticks = 90
         case _RoughnessPhase.CARRY:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (
-                tx,
-                ty,
-                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
             )
             ticks = 120
         case _RoughnessPhase.PLACE:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (tx, ty, place_z + HAND_TO_GEL_FACE)
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(place, state.quat, tool)
             ticks = 90
         case _RoughnessPhase.OPEN:
             qpos = world.arm.gripper.open_qpos
@@ -194,11 +191,9 @@ def _enter(
             return state, _action(state)
         case _RoughnessPhase.RETRACT:
             (tx, ty, tz), _ = world.object_pose(plate)
-            place_z = tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT
-            goal = (
-                tx,
-                ty,
-                place_z + HAND_TO_GEL_FACE + _APPROACH_CLEARANCE,
+            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+            goal = ee_for_tool_center(
+                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
             )
             ticks = 90
         case _RoughnessPhase.INIT | _RoughnessPhase.DONE:
@@ -240,9 +235,12 @@ class _RoughnessExpert:
             pos, quat = world.arm.ee_pose()
             # Parallel the pad plane to the block's +/-y face instead of
             # inheriting the home pose: the 1.28 deg error there, times the
-            # 118.3 mm lever to the gel face, is 2.6 mm of lateral grasp error.
+            # hand-to-pad lever the asset declares, is millimetres of lateral
+            # grasp error at the pads.
             _, bquat = world.object_pose(_BLOCK_BY_LABEL[_label(world)])
-            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
+            quat = align_pad_to_face(
+                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+            )
             state = replace(
                 state,
                 label=_label(world),
@@ -313,7 +311,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
             tz
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + grasp_depth(world.arm.tool)
             + _APPROACH_CLEARANCE
         )
         retracted = (

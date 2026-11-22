@@ -1,6 +1,17 @@
 #usda 1.0
 (
     customLayerData = {
+        dictionary openvitac = {
+            string contract_version = "1"
+            string tool_center = "/panda/panda_hand/tool_center"
+            string[] pad_frames = ["/panda/gelpad_left", "/panda/gelpad_right"]
+            float[] pad_extent_m = [0.02075, 0.004, 0.02525]
+            string[] finger_joints = ["panda_finger_joint1", "panda_finger_joint2"]
+            float open_travel_m = 0.039999999
+            float close_gap_m = 0.007127577
+            string close_gap_at = "lower"
+            string provenance = "Measured on this asset by joint-chain forward kinematics at the authored pose (both finger joints at q=0): a pad face is the gel-pad mesh plane facing the other pad (vertices within 0.5 mm of the extreme plane; 19.25 x 14.75 mm patch), tool_center is the midpoint of the two face centres, close_gap_m is the distance between those planes, open_travel_m is the prismatic span of panda_finger_joint1/2 and pad_extent_m is one gel-pad mesh's bounding box in the panda_hand frame."
+        }
         dictionary cameraSettings = {
             dictionary Front = {
                 double3 position = (5, 0, 0)
@@ -171,6 +182,13 @@ over "panda" (
 
     over "panda_hand"
     {
+        # Pad midpoint in the hand frame (metres): see customLayerData.openvitac.
+        def Xform "tool_center"
+        {
+            double3 xformOp:translate = (-0.000081645, -0.000229411, 0.118181646)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
         over "panda_finger_joint1"
         {
             bool physics:jointEnabled = 1

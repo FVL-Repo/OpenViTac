@@ -8,11 +8,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from _tool import gsmini_tool
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import pad_close_q, quat_conjugate, quat_rotate
 from openvitac_tasks.tasks import pull_drawer
+
+_TOOL = gsmini_tool()
 
 
 class PullDrawerGeometryTests(unittest.TestCase):
@@ -51,12 +54,15 @@ class PullDrawerGeometryTests(unittest.TestCase):
 
     def test_close_target_presses_the_gel_into_the_handle_nub(self) -> None:
         # 20 mm nub, 1.5 mm per pad: (0.020 - 0.003 - 0.0071276) / 2.
-        self.assertAlmostEqual(pull_drawer._CLOSE_Q, 0.0049362, places=9)
+        close_q = pad_close_q(_TOOL, pull_drawer._HANDLE_WIDTH, 0.0015)
+        # 0.0049362 is the same command from the hand-rounded 7.1276 mm gap;
+        # the asset declares 7.127577 mm, hence the 1e-7 tolerance.
+        self.assertAlmostEqual(close_q, 0.0049362, delta=1e-7)
         self.assertAlmostEqual(
-            pull_drawer._CLOSE_Q, pad_close_q(0.020, 0.0015), places=12
+            close_q, pad_close_q(_TOOL, 0.020, pull_drawer._GRASP_OVERTRAVEL), places=12
         )
         # The 1 mm default that suits the blocks would only give 7.85 N.
-        self.assertLess(pull_drawer._CLOSE_Q, pad_close_q(0.020))
+        self.assertLess(close_q, pad_close_q(_TOOL, 0.020))
 
     def test_drawer_hull_has_the_nub_and_the_outer_silhouette(self) -> None:
         asset = (
@@ -105,7 +111,7 @@ class PullDrawerGeometryTests(unittest.TestCase):
 
 class _Gripper:
     open_qpos = 0.04
-    close_qpos = pull_drawer._CLOSE_Q
+    close_qpos = pad_close_q(gsmini_tool(), 0.020, 0.0015)
 
     @property
     def capabilities(self) -> frozenset[GripperCapability]:
@@ -140,6 +146,10 @@ class _Arm:
     @property
     def gripper(self) -> _Gripper:
         return self._world.gripper
+
+    @property
+    def tool(self) -> Any:
+        return _TOOL
 
     def ee_pose(self):
         return self._world.ee, self._world.quat

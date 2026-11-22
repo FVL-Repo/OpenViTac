@@ -28,13 +28,13 @@ from openvitac_spec import (
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
 from ..motion import (
-    HAND_TO_GEL_FACE,
     Hold,
     Move,
     advance_move,
     align_pad_to_face,
     begin_move,
-    hand_for_pad_midpoint,
+    ee_for_tool_center,
+    grasp_depth,
     pad_close_q,
     quat_rotate,
 )
@@ -60,7 +60,8 @@ _BLOCK_XY_NOISE = 0.015
 _GRASP_HEIGHT = _BLOCK_HEIGHT * 0.5
 _APPROACH_CLEARANCE = 0.050
 # The approach arrives horizontally over a standing 40 mm block; clear its top
-# (the pad face is 25.3 mm tall, see roughness_guided_regrasp) before descending.
+# (the pads are taller than that clearance leaves room for, see
+# roughness_guided_regrasp) before descending.
 _TRANSIT_CLEARANCE = 0.09
 # Pad-face widths at the grasp height: cube 40.0 mm; half cylinder 25.0 mm
 # (flat face at y=-10.608 mm to the arc apex at +14.392 mm); hexagonal prism
@@ -70,9 +71,6 @@ _BLOCK_WIDTH_BY_ACTOR = {
     "block_blue_cube": 0.040000,
     "block_blue_half_cylinder": 0.025000,
     "block_red_hexagonal_prism": 0.031176,
-}
-_CLOSE_Q_BY_BLOCK = {
-    name: pad_close_q(width) for name, width in _BLOCK_WIDTH_BY_ACTOR.items()
 }
 # UIPC fixed support for the table (actor-local box; top on the 2.5 mm table).
 _TABLE_SUPPORT_BOX = ((0.0, 0.0, 0.0013), (0.3, 0.3, 0.0012))
@@ -100,7 +98,6 @@ _TASK_INITIAL_JOINT_POS = {
     "panda_joint5": 0.0,
     "panda_joint6": 2.5,
     "panda_joint7": 0.741,
-    "panda_finger.*": 0.02,
 }
 
 
@@ -243,27 +240,27 @@ def _enter(
     """Compute ``phase``'s targets from the live world and its first action."""
     spec = state.spec
     assert spec is not None
+    tool = world.arm.tool
     match phase:
         case _BlockPhase.PREGRASP:
             # The pad plane is aligned to the block face, so the hand's finger
             # axis is tilted; the pad midpoint (not the hand origin) must sit on
             # the block's mid-plane at _GRASP_HEIGHT.
             (bx, by, bz), _ = world.object_pose(spec.actor)
-            goal = hand_for_pad_midpoint(
+            goal = ee_for_tool_center(
                 (bx, by, bz + _GRASP_HEIGHT),
                 state.quat,
+                tool,
                 clearance=_TRANSIT_CLEARANCE,
             )
             ticks = 120
         case _BlockPhase.DESCEND:
             (bx, by, bz), _ = world.object_pose(spec.actor)
-            goal = hand_for_pad_midpoint(
-                (bx, by, bz + _GRASP_HEIGHT), state.quat
-            )
+            goal = ee_for_tool_center((bx, by, bz + _GRASP_HEIGHT), state.quat, tool)
             ticks = _MOVE_TICKS
         case _BlockPhase.CLOSE:
-            # Gel face _GRASP_OVERTRAVEL into this block per side.
-            qpos = _CLOSE_Q_BY_BLOCK[spec.actor]
+            # Pad face GRASP_OVERTRAVEL into this block per side.
+            qpos = pad_close_q(tool, _BLOCK_WIDTH_BY_ACTOR[spec.actor])
             state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(40))
             return state, _action(state)
         case _BlockPhase.LIFT:
@@ -370,7 +367,9 @@ class _BlockExpert:
             # Parallel the pad plane to the target block's +/-y face; see
             # roughness_classification for the lever-arm rationale.
             _, bquat = world.object_pose(spec.actor)
-            quat = align_pad_to_face(quat, quat_rotate(bquat, (0.0, 1.0, 0.0)))
+            quat = align_pad_to_face(
+                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+            )
             state = replace(
                 state,
                 quat=quat,
@@ -433,7 +432,7 @@ def _success(world: ExpertWorld) -> Iterator[bool]:
         retract_z = (
             box_pos[2]
             + _BOX_SIZE
-            + HAND_TO_GEL_FACE
+            + grasp_depth(world.arm.tool)
             + _RELEASE_RETRACT
             - _INSERT_DEPTH
         )

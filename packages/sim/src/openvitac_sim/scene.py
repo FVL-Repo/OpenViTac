@@ -39,6 +39,7 @@ from openvitac_spec import (
     SceneSpec,
     SensorBinding,
     SettleProtocol,
+    ToolGeometry,
 )
 from openvitac_tactile.config import TactileCfg
 from openvitac_tactile.observation import TactileObservation
@@ -47,7 +48,7 @@ from openvitac_tactile.softworld import ObjectHandle
 
 from .assets import asset
 from .gelpad_visual import GelpadVisual, visual_update_due
-from .robot import assemble_robot
+from .robot import assemble_robot, resolve_joint_pos
 from .sensor import Sensor, make_sensor, sensor_class, sensor_has_pad_proxy
 from .sensor.base import ContactObject, PadCameraRequest, World, WorldBuilder
 from .sensor.gsmini import BoundGsMiniSensor
@@ -671,11 +672,9 @@ class Scene:
                 tactile, run_id=f"scene_{id(self):x}", group_id="0"
             )
         spawn_light(_light_cfg(spec.light))
-        joint_pos = dict(
-            spec.embodiment.default_joint_pos
-            if spec.joint_pos is None
-            else spec.joint_pos
-        )
+        # The task's pose overrides the embodiment's key by key: the gripper
+        # opening (and anything else a task leaves out) stays the embodiment's.
+        joint_pos = resolve_joint_pos(spec.embodiment, spec.joint_pos)
         for binding in spec.sensors:
             for joint_name, offset in binding.mount.joint_offsets.items():
                 joint_pos[joint_name] = joint_pos.get(joint_name, 0.0) + offset
@@ -1661,6 +1660,11 @@ class SceneArm:
             npt.NDArray[np.floating[Any]],
             self._scene._arm.robot.data.joint_pos.torch[0].cpu().numpy(),
         )
+
+    @property
+    def tool(self) -> ToolGeometry:
+        """Grasp geometry from the robot asset (see ``openvitac_spec.ToolGeometry``)."""
+        return self._scene._arm.tool
 
     def gripper_contact(self, *, force_threshold: float = 1.0) -> tuple[bool, bool]:
         """``(left, right)`` pad contact flags: PhysX net contact force on each

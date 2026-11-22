@@ -23,7 +23,7 @@ from isaaclab.utils.math import (
 )
 from isaaclab_physx.sim.schemas import RigidBodyPropertiesCfg
 
-from openvitac_spec import EmbodimentSpec
+from openvitac_spec import EmbodimentSpec, ToolGeometry, read_tool_geometry
 
 from .assets import asset
 from .spawn import apply_init_state, spawn_articulation
@@ -79,6 +79,30 @@ def _actuator_cfgs(embodiment: EmbodimentSpec) -> dict[str, ActuatorBaseCfg]:
     return actuators
 
 
+def resolve_joint_pos(
+    embodiment: EmbodimentSpec,
+    joint_pos: dict[str, float] | None,
+) -> dict[str, float]:
+    """Initial joint pose: the embodiment's default, overridden key by key.
+
+    A task authors the arm's nominal pose; everything it does not name -- the
+    gripper's opening above all -- comes from the embodiment, which is the only
+    side that knows which gripper is mounted.  Replacing the default instead of
+    merging dropped the fingers from the initial pose as soon as a task stopped
+    naming them, which on an articulation leaves them at zero.
+
+    Keys are IsaacLab joint-name patterns (full-match regexes), not joint names,
+    so this merges by key and does not reconcile two keys that would match the
+    same joint -- the articulation's joint list is not known here.  The two
+    sides are disjoint today (tasks: arm joints, embodiments: gripper joints),
+    which is the premise this relies on.
+    """
+    joints = dict(embodiment.default_joint_pos)
+    if joint_pos:
+        joints.update(joint_pos)
+    return joints
+
+
 def assemble_robot(
     embodiment: EmbodimentSpec,
     prim_path: str = "/World/Robot",
@@ -86,13 +110,11 @@ def assemble_robot(
 ) -> RobotArm:
     """Build the whole robot for ``embodiment``.
 
-    ``joint_pos`` is the task's nominal pose (already carrying sensor mount offsets);
-    the embodiment default is used when omitted.
+    ``joint_pos`` is the task's nominal pose (already carrying sensor mount offsets)
+    merged over the embodiment's default, which supplies everything it omits.
     """
     embodiment.validate_supported()
-    joints = dict(
-        embodiment.default_joint_pos if joint_pos is None else joint_pos
-    )
+    joints = resolve_joint_pos(embodiment, joint_pos)
     cfg = ArticulationCfg(
         prim_path=prim_path,
         spawn=sim_utils.UsdFileCfg(
@@ -125,6 +147,20 @@ class RobotArm:
         self._arm_joint_ids: list[int] = []
         self._gripper_joint_ids: list[int] = []
         self._last_target: torch.Tensor | None = None
+        self._tool: ToolGeometry | None = None
+
+    @property
+    def tool(self) -> ToolGeometry:
+        """Grasp geometry the robot's asset declares (its ``tool_center`` contract).
+
+        Read on first use, not at spawn: a task that never asks for the tool
+        center must still run, and the read touches ``pxr``.
+        """
+        if self._tool is None:
+            self._tool = read_tool_geometry(
+                asset(self.embodiment.asset.usd), ee_link=self.embodiment.arm.ee_link
+            )
+        return self._tool
 
     def _resolve(self) -> None:
         if self._ik is not None:

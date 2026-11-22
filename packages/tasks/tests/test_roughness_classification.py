@@ -8,18 +8,25 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from _tool import gsmini_tool
 
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
-from openvitac_tasks.motion import HAND_TO_GEL_FACE, PAD_NORMAL_IN_HAND
+from openvitac_tasks.motion import pad_close_q, tool_center
 from openvitac_tasks.tasks.roughness_classification import (
     _APPROACH_CLEARANCE,
-    _CLOSE_Q_BY_BLOCK,
+    _BLOCK_WIDTH_BY_NAME,
     _GRASP_HEIGHT,
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     RoughnessClassification,
 )
+
+_TOOL = gsmini_tool()
+# The two closes this task commands, through the asset's own close law.
+_CLOSE_Q = {
+    block: pad_close_q(_TOOL, width) for block, width in _BLOCK_WIDTH_BY_NAME.items()
+}
 
 _PLATES = {
     "blue_plate": (0.45, 0.08, 0.002),
@@ -46,7 +53,7 @@ class _Gripper:
     def set_target(self, qpos: float) -> None:
         world = self._world
         # The task commands its width-derived close, not the hardware limit.
-        if qpos in _CLOSE_Q_BY_BLOCK.values() and self._qpos != qpos:
+        if qpos in _CLOSE_Q.values() and self._qpos != qpos:
             world.events.append(("close", 1))
             world.holding = True
         elif qpos == self.open_qpos and self._qpos != self.open_qpos:
@@ -73,6 +80,10 @@ class _Arm:
     def gripper(self) -> _Gripper:
         return self._world._gripper
 
+    @property
+    def tool(self) -> Any:
+        return _TOOL
+
     def ee_pose(
         self,
     ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
@@ -88,11 +99,9 @@ class _Arm:
         world.quat = quat
         world.events.append(("move", pos))
         if world.holding:
-            world.blocks[world.label] = (
-                pos[0],
-                pos[1],
-                pos[2] - HAND_TO_GEL_FACE - _GRASP_HEIGHT,
-            )
+            # The pad midpoint holds the block at the grasp height.
+            pad_x, pad_y, pad_z = tool_center(pos, quat, _TOOL)
+            world.blocks[world.label] = (pad_x, pad_y, pad_z - _GRASP_HEIGHT)
 
 
 class _World:
@@ -188,14 +197,14 @@ class RoughnessClassificationTests(unittest.TestCase):
             )
         ).T
         normal = (np.linalg.inv(hand) @ gelpad)[:3, 2]
-        for got, want in zip(normal, PAD_NORMAL_IN_HAND, strict=True):
+        for got, want in zip(normal, _TOOL.pad_normal_in_ee, strict=True):
             self.assertAlmostEqual(float(got), want, places=4)
 
     def test_close_position_matches_the_recorded_command(self) -> None:
         # Both blocks are grasped on the gel, so each close comes from its own
         # width (1 mm gel overtravel; measured pad-face gap 7.1276 mm at q=0).
-        self.assertAlmostEqual(_CLOSE_Q_BY_BLOCK["smooth_block"], 0.0029362, places=7)
-        self.assertAlmostEqual(_CLOSE_Q_BY_BLOCK["rough_block"], 0.0033762, places=7)
+        self.assertAlmostEqual(_CLOSE_Q["smooth_block"], 0.0029362, places=7)
+        self.assertAlmostEqual(_CLOSE_Q["rough_block"], 0.0033762, places=7)
 
     def test_randomizer_samples_both_labels_and_table_standby(self) -> None:
         seen: set[str] = set()
@@ -239,7 +248,7 @@ class RoughnessClassificationTests(unittest.TestCase):
                 target[2]
                 + _TARGET_BLOCK_Z
                 + _GRASP_HEIGHT
-                + HAND_TO_GEL_FACE
+                + _TOOL.center_in_ee[2]
                 + _APPROACH_CLEARANCE,
             )
             self.assertTrue(next(RoughnessClassification.success(world)))
@@ -259,7 +268,7 @@ class RoughnessClassificationTests(unittest.TestCase):
             target[2]
             + _TARGET_BLOCK_Z
             + _GRASP_HEIGHT
-            + HAND_TO_GEL_FACE
+            + _TOOL.center_in_ee[2]
             + _APPROACH_CLEARANCE
         )
         self.assertGreaterEqual(world.ee[2], retract_z - _SUCCESS_Z_TOLERANCE)
