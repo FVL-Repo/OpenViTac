@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from ._lazy import __getattr__ as __getattr__
 from .app import launch
 from .assets import asset, assets_root
+from .authority import require_tactile_worker
 from .sensors import (
     AttachmentBody,
     GripperKind,
@@ -94,6 +95,7 @@ __all__ = [
     "assets_root",
     "create_joint",
     "launch",
+    "require_tactile_worker",
     "spawn_articulation",
     "spawn_camera",
     "spawn_light",

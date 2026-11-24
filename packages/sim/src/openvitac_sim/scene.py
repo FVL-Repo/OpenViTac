@@ -47,6 +47,7 @@ from openvitac_tactile.protocol import FingerSample
 from openvitac_tactile.softworld import ObjectHandle
 
 from .assets import asset
+from .authority import require_tactile_worker
 from .gelpad_visual import GelpadVisual, visual_update_due
 from .robot import assemble_robot, resolve_joint_pos
 from .sensor import Sensor, make_sensor, sensor_class, sensor_has_pad_proxy
@@ -620,6 +621,9 @@ class Scene:
             tactile_plan_from_scene(spec)
             if tactile_enabled and spec.sensors
             else None
+        )
+        require_tactile_worker(
+            spec.actors, tactile_worker=tactile is not None and tactile.enabled
         )
         if tactile is not None and tactile.enabled:
             _require_supported_render_streams(spec, tactile)

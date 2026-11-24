@@ -86,11 +86,6 @@ def _run_directory(out: Path, task: TaskName) -> Path:
     raise AssertionError("unreachable: itertools.count is infinite")
 
 
-def _task_has_tactile(task: TaskName) -> bool:
-    """Whether the task's scene spec declares tactile sensor bindings."""
-    return bool(TASKS[task].scene_spec().sensors)
-
-
 def _effective_settle_steps(task: Task, override: int | None) -> int:
     """CLI override when given, otherwise the task's pre-rollout default."""
     steps = task.settle_steps if override is None else override
@@ -583,7 +578,12 @@ def collect(
         expert=expert,
         record_every=record_every,
     )
-    tactile = _task_has_tactile(task)
+    scene_spec = TASKS[task].scene_spec()
+    tactile = bool(scene_spec.sensors)
+    # A "uipc" actor is owned by the tactile worker; refuse it here rather than
+    # after a Kit startup, where the ghost would only show as an episode whose
+    # prop never moves.
+    sim.require_tactile_worker(scene_spec.actors, tactile_worker=tactile)
     settle_window = _SETTLE_WINDOW if settle_converge else None
 
     run_dir = _run_directory(out, task)
