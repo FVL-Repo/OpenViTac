@@ -64,12 +64,14 @@ def _actuator_cfgs(embodiment: EmbodimentSpec) -> dict[str, ActuatorBaseCfg]:
             damping=1e2,
         )
     elif embodiment.gripper.kind == "robotiq_85":
+        # None on every field: the 2F-85's drive lives in the vendor payload and the
+        # asset is the one place that knows the mechanism's gains and effort cap.
         actuators["robotiq_85"] = ImplicitActuatorCfg(
             joint_names_expr=["finger_joint"],
-            joint_effort_limit=80.0,
-            joint_velocity_limit=1.0,
-            stiffness=200.0,
-            damping=20.0,
+            joint_effort_limit=None,
+            joint_velocity_limit=None,
+            stiffness=None,
+            damping=None,
         )
     else:
         raise NotImplementedError(

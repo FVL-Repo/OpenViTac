@@ -1,0 +1,224 @@
+#usda 1.0
+(
+    # PhysX "parallel grip" variant of the 2F-85: the shared neutral joint
+    # frames/limits/bodies live in ./Robotiq_2F_85_kinematics_physics.usda
+    # (sublayered below); this layer OVERLAYS only the PhysX engine physics --
+    # the finger_joint driver + armature and the mimic coupling that ties the
+    # passive joints to it -- suppresses the compliant five-bar's unused revolutes
+    # (active=false), and welds outer_knuckle<->outer_finger rigid.
+    defaultPrim = "Robotiq_2F_85"
+    metersPerUnit = 1
+    upAxis = "Z"
+    subLayers = [
+        @./Robotiq_2F_85_physx_common_physics.usda@,
+        @./Robotiq_2F_85_body_mass_physics.usda@,
+        @./Robotiq_2F_85_fingertip_physics.usda@,
+        @./Robotiq_2F_85_kinematics_physics.usda@
+    ]
+)
+
+def Xform "Robotiq_2F_85" (
+    kind = "assembly"
+)
+{
+    over Xform "Robotiq_2F_85" (
+        kind = "assembly"
+    )
+    {
+        int physxArticulation:solverPositionIterationCount = 64
+
+
+        # Joint frames/limits/bodies + PhysicsJointStateAPI are the shared neutral
+        # defs in ./Robotiq_2F_85_kinematics_physics.usda (sublayered above). These overlays
+        # add ONLY the PhysX engine physics: the finger_joint driver drive + armature,
+        # and the mimic coupling that algebraically ties the passive joints to it.
+        # The open-tree parallel grip does NOT use the compliant five-bar's
+        # outer_finger / inner_knuckle revolutes -> suppressed (active=false); the
+        # outer_knuckle<->outer_finger link is a rigid FixedJoint weld (see below).
+        over "Joints"
+        {
+            over "finger_joint" (
+                prepend apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0.0002
+                float drive:angular:physics:maxForce = 26
+                float drive:angular:physics:stiffness = 3
+                float drive:angular:physics:targetPosition = 0
+                float drive:angular:physics:targetVelocity = 0
+                float physxJoint:armature = 0.0001
+            }
+
+            over "right_outer_knuckle_joint" (
+                delete apiSchemas = ["PhysicsDriveAPI:angular"]
+                prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:rotZ"]
+            )
+            {
+                float physxJoint:armature = 0.0001
+                float physxJoint:maxJointVelocity = 10000
+                float physxMimicJoint:rotZ:dampingRatio = 0
+                float physxMimicJoint:rotZ:gearing = -1
+                float physxMimicJoint:rotZ:naturalFrequency = 0
+                rel physxMimicJoint:rotZ:referenceJoint = </Robotiq_2F_85/Robotiq_2F_85/Joints/finger_joint>
+            }
+
+            over "right_inner_finger_joint" (
+                delete apiSchemas = ["PhysicsDriveAPI:angular"]
+                prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:rotX"]
+            )
+            {
+                float physxJoint:maxJointVelocity = 10000
+                float physxMimicJoint:rotX:dampingRatio = 0
+                float physxMimicJoint:rotX:gearing = 1
+                float physxMimicJoint:rotX:naturalFrequency = 0
+                rel physxMimicJoint:rotX:referenceJoint = </Robotiq_2F_85/Robotiq_2F_85/Joints/finger_joint>
+            }
+
+            over "right_inner_finger_knuckle_joint" (
+                delete apiSchemas = ["PhysicsDriveAPI:angular"]
+                prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:rotX"]
+            )
+            {
+                float physxJoint:maxJointVelocity = 10000
+                float physxMimicJoint:rotX:dampingRatio = 0
+                float physxMimicJoint:rotX:gearing = -1
+                float physxMimicJoint:rotX:naturalFrequency = 0
+                rel physxMimicJoint:rotX:referenceJoint = </Robotiq_2F_85/Robotiq_2F_85/Joints/finger_joint>
+            }
+
+            over "left_inner_finger_knuckle_joint" (
+                delete apiSchemas = ["PhysicsDriveAPI:angular"]
+                prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:rotX"]
+            )
+            {
+                float physxJoint:maxJointVelocity = 10000
+                float physxMimicJoint:rotX:dampingRatio = 0
+                float physxMimicJoint:rotX:gearing = 1
+                float physxMimicJoint:rotX:naturalFrequency = 0
+                rel physxMimicJoint:rotX:referenceJoint = </Robotiq_2F_85/Robotiq_2F_85/Joints/finger_joint>
+            }
+
+            over "left_inner_finger_joint" (
+                delete apiSchemas = ["PhysicsDriveAPI:angular"]
+                prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:rotX"]
+            )
+            {
+                float physxJoint:maxJointVelocity = 10000
+                float physxMimicJoint:rotX:dampingRatio = 0
+                float physxMimicJoint:rotX:gearing = -1
+                float physxMimicJoint:rotX:naturalFrequency = 0
+                rel physxMimicJoint:rotX:referenceJoint = </Robotiq_2F_85/Robotiq_2F_85/Joints/finger_joint>
+            }
+
+            # Compliant five-bar joints the open-tree parallel grip does not use.
+            over "left_outer_finger_joint" (active = false) {}
+            over "right_outer_finger_joint" (active = false) {}
+            over "left_inner_knuckle_joint" (active = false) {}
+            over "right_inner_knuckle_joint" (active = false) {}
+        }
+
+        # base_link + left/right_outer_knuckle rigid-body mass is authored once in
+        # ./Robotiq_2F_85_body_mass_physics.usda (a subLayer, above) and shared with
+        # the compliant and Newton variants — single source of truth for mass + CoM.
+
+        over "left_outer_finger" (
+            delete apiSchemas = ["PhysicsMassAPI"]
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            kind = "group"
+        )
+        {
+            point3f physics:centerOfMass = (0.000005531254, -0.06595047, 0.06895309)
+            float3 physics:diagonalInertia = (0.0000132201985, 0.0000042931024, 0.000010880907)
+            float physics:mass = 0.039179202
+            quatf physics:principalAxes = (0.76604444, -0.64278764, 0, 0)
+
+            def PhysicsFixedJoint "FixedJoint"
+            {
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/left_outer_knuckle>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_outer_finger>
+                float physics:breakForce = 3.4028235e38
+                float physics:breakTorque = 3.4028235e38
+                point3f physics:localPos0 = (7.4505797e-9, 7.45058e-9, 3.87445e-9)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, -5.531774e-8, -4.2146855e-8, 2.370759e-8)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+            }
+        }
+
+        # Distal body (finger4step) only — the pad is the separate
+        # left_fingertip rigid body. Mass is the CAD part ratio (11.29 g distal
+        # / 22.10 g pad) applied to the 0.039254718 kg per-side total, so it is
+        # not the raw CAD part mass. Inertia is the part's own tensor about its
+        # own CoM.
+        over "left_inner_finger" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        )
+        {
+            point3f physics:centerOfMass = (-0.00000139, -0.05940770, 0.10376717)
+            float3 physics:diagonalInertia = (8.956112865e-07, 1.209160565e-06, 1.440650775e-06)
+            float physics:mass = 0.01327301
+            quatf physics:principalAxes = (0.1989801, 0.6786246, -0.6783625, -0.1992485)
+        }
+
+        over "left_inner_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        )
+        {
+            point3f physics:centerOfMass = (-2.005321e-10, -0.03222066, 0.083420366)
+            float3 physics:diagonalInertia = (0.000011838778, 0.0000044877793, 0.00000800488)
+            float physics:mass = 0.027306942
+            quatf physics:principalAxes = (0.9063078, -0.42261827, 0, 0)
+        }
+
+        # right_outer_knuckle rigid-body mass: see ./Robotiq_2F_85_body_mass_physics.usda.
+
+        over "right_outer_finger" (
+            delete apiSchemas = ["PhysicsMassAPI"]
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            kind = "group"
+        )
+        {
+            point3f physics:centerOfMass = (-0.000005531254, 0.06595047, 0.06895309)
+            float3 physics:diagonalInertia = (0.0000132201985, 0.0000042931024, 0.000010880907)
+            float physics:mass = 0.039179202
+            quatf physics:principalAxes = (0.76604444, 0.64278764, 0, 0)
+
+            def PhysicsFixedJoint "FixedJoint"
+            {
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/right_outer_knuckle>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_outer_finger>
+                float physics:breakForce = 3.4028235e38
+                float physics:breakTorque = 3.4028235e38
+                point3f physics:localPos0 = (3.725291e-9, -7.45058e-9, -3.4324326e-9)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, -5.5317734e-8, 4.2146844e-8, -2.634178e-9)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+            }
+        }
+
+        over "right_inner_finger" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            kind = "group"
+        )
+        {
+            point3f physics:centerOfMass = (0.00000139, 0.05940770, 0.10376717)
+            float3 physics:diagonalInertia = (8.956112865e-07, 1.209160565e-06, 1.440650775e-06)
+            float physics:mass = 0.01327301
+            quatf physics:principalAxes = (-0.6783625, -0.1992485, 0.1989801, 0.6786246)
+        }
+
+        over "right_inner_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            kind = "group"
+        )
+        {
+            point3f physics:centerOfMass = (2.005321e-10, 0.03222066, 0.083420366)
+            float3 physics:diagonalInertia = (0.000011838778, 0.0000044877793, 0.00000800488)
+            float physics:mass = 0.027306942
+            quatf physics:principalAxes = (0.9063078, 0.42261827, 0, 0)
+        }
+
+        # Fingertip rigid bodies + PhysicsFixedJoints are shared with the compliant
+        # variant; see the sublayered Robotiq_2F_85_fingertip_physics.usda.
+    }
+}

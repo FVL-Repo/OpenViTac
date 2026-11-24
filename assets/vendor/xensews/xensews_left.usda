@@ -1,0 +1,119 @@
+#usda 1.0
+(
+    doc = """XenseWS tactile sensor case, gel pad and finger-side bracket, in a sensor frame.
+
+Frame (metres, right-handed): +x points along the finger (feed, away from the wrist),
++y points at the object (the gel contact face normal), +z is the pad width.
+
+The case and the gel are the ViTaForge XenseWS parts (XenseCase.usd / XensePad.usd).
+The gel contact face is flush with the case nose -- the reading validated on
+franka_xense.usda -- and the gel sits 4 mm inside the shell.  Behind the case a
+4.8 mm bracket plate stands in for the printed adapter that bolts the shell to the
+gripper finger; it carries no collision, and neither does the shell: the only
+contact body in this asset is the invisible ``pad_proxy``, which bounds the gel
+contact face exactly.  The shell is deliberately collider-free -- a housing that
+collides is what welded the old ViTaForge asset shut.
+"""
+    defaultPrim = "XenseWS_left"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "XenseWS_left"
+{
+    def Xform "body"
+    {
+
+        def Xform "case" (
+            prepend payload = @../../embodiment/XenseCase.usd@
+        )
+        {
+            float3 xformOp:scale = (0.01, 0.01, 0.01)
+            double3 xformOp:translate = (-0.032334944, -0.022617901, -0.028281500)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+
+            # The printed shell ships with a collider.  It sits around the finger and
+            # the gel, so an object would hit the housing centimetres before the pad:
+            # only the pad proxy may carry contact on this gripper.
+            over "body_mesh"
+            (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                bool physics:collisionEnabled = 0
+                rel material:binding = </XenseWS_left/Looks/Shell>
+                color3f[] primvars:displayColor = [(0.32, 0.33, 0.35)]
+            }
+        }
+
+        def Xform "gelpad" (
+            prepend payload = @../../embodiment/XensePad.usd@
+        )
+        {
+            quatf xformOp:orient = (0.70710678, -0.70710678, 0, 0)
+            double3 xformOp:translate = (0, -0.002000000, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+            # The shipped tensor material is black on a black shell; recolour it so a
+            # captured frame shows which face is the sensor.
+            over "xensews_pad_tensor_34p312x20p75x4mm_m"
+            {
+                rel material:binding = </XenseWS_left/Looks/Gel>
+            }
+        }
+
+        def Cube "pad_proxy" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 2
+            float3 xformOp:scale = (0.017156000, 0.002000000, 0.010375000)
+            double3 xformOp:translate = (0, -0.002000000, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            token visibility = "invisible"
+        }
+
+        def Cube "bracket_plate" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            bool physics:collisionEnabled = 0
+            double size = 2
+            float3 xformOp:scale = (0.008950000, 0.013500000, 0.002400000)
+            double3 xformOp:translate = (0, -0.047032603, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            token visibility = "invisible"
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "Shell"
+        {
+            token outputs:surface.connect = </XenseWS_left/Looks/Shell/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.62, 0.64, 0.66)
+                float inputs:metallic = 0.55
+                float inputs:roughness = 0.42
+                token outputs:surface
+            }
+        }
+
+        def Material "Gel"
+        {
+            token outputs:surface.connect = </XenseWS_left/Looks/Gel/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.05, 0.55, 0.62)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.35
+                token outputs:surface
+            }
+        }
+    }
+}

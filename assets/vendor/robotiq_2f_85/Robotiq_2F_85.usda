@@ -1,0 +1,271 @@
+#usda 1.0
+(
+    customLayerData = {
+        # SR.001 requires these identity fields authored DIRECTLY in the root
+        # layer's customLayerData (not only nested in SimReady_Metadata). They
+        # mirror the matching SimReady_Metadata entries below.
+        string asset_name = "Robotiq_2F_85"
+        string asset_type = "gripper"
+        string source_file = "Defeatured_2F_85_PAD_OPEN.step"
+        string usd_date_generated = "2026-09-19"
+        # SimReady provenance metadata (SimReady Foundations SR.003 / FET_033_STANDARD).
+        # Required fields live inside this dictionary; asset_extents/mass/rigid_body_count
+        # are computed from the default (Physx_parallel_grip) composed stage.
+        dictionary SimReady_Metadata = {
+            string asset_name = "Robotiq_2F_85"
+            string asset_type = "gripper"
+            string category = "robot_gripper"
+            string author = "Robotiq"
+            string asset_license = "CC-BY-4.0"
+            string source_file = "Defeatured_2F_85_PAD_OPEN.step"
+            string usd_date_generated = "2026-09-19"
+            string qcode = "Q1340324"
+            int rigid_body_count = 11
+            float3 asset_extents = (0.075, 0.15448, 0.15178)
+            float mass = 1.028922
+        }
+        dictionary cameraSettings = {
+            dictionary Front = {
+                double3 position = (5, 0, 0)
+                double radius = 5
+            }
+            dictionary Perspective = {
+                double3 position = (0.18173853819298824, -0.1889297963908149, 0.24230409941838207)
+                double3 target = (0.07693172486486198, -0.08298867433718148, 0.1449407625441711)
+            }
+            dictionary Right = {
+                double3 position = (0, -5, 0)
+                double radius = 5
+            }
+            dictionary Top = {
+                double3 position = (0, 0, 5)
+                double radius = 5
+            }
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./Robotiq_2F_85.usda"
+            dictionary locked = {
+                bool "./configuration/Robotiq_2F_85_robot.usda" = 1
+            }
+            dictionary muteness = {
+            }
+        }
+        dictionary renderSettings = {
+        }
+    }
+    defaultPrim = "Robotiq_2F_85"
+    endTimeCode = 0
+    metersPerUnit = 1
+    startTimeCode = -1
+    subLayers = [
+        @./configuration/Robotiq_2F_85_robot.usda@
+    ]
+    upAxis = "Z"
+)
+
+def "Render" (
+    hide_in_stage_window = true
+    no_delete = true
+)
+{
+    def "OmniverseKit"
+    {
+        def "HydraTextures" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            def RenderProduct "omni_kit_widget_viewport_ViewportTexture_0" (
+                prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                hide_in_stage_window = true
+                no_delete = true
+            )
+            {
+                rel camera = </OmniverseKit_Persp>
+                token omni:rtx:background:source:texture:textureMode = "repeatMirrored"
+                token omni:rtx:background:source:type = "domeLight"
+                bool omni:rtx:dlss:frameGeneration = 0
+                string omni:rtx:material:db:rtSensorNameToIdMap = "DefaultMaterial:0;AsphaltStandardMaterial:1;AsphaltWeatheredMaterial:2;VegetationGrassMaterial:3;WaterStandardMaterial:4;GlassStandardMaterial:5;FiberGlassMaterial:6;MetalAlloyMaterial:7;MetalAluminumMaterial:8;MetalAluminumOxidizedMaterial:9;PlasticStandardMaterial:10;RetroMarkingsMaterial:11;RetroSignMaterial:12;RubberStandardMaterial:13;SoilClayMaterial:14;ConcreteRoughMaterial:15;ConcreteSmoothMaterial:16;OakTreeBarkMaterial:17;FabricStandardMaterial:18;PlexiGlassStandardMaterial:19;MetalSilverMaterial:20"
+                bool omni:rtx:material:db:syncLoads = 1
+                bool omni:rtx:post:registeredCompositing:invertColorCorrection = 1
+                bool omni:rtx:post:registeredCompositing:invertToneMap = 1
+                int omni:rtx:pt:clampSpp = 64
+                bool omni:rtx:pt:lightcache:cached:dontResolveConflicts = 1
+                int omni:rtx:pt:maxSamplesPerLaunch = 2073600
+                int omni:rtx:pt:maxVolumeBounces = 4
+                int omni:rtx:pt:mgpu:maxPixelsPerRegionExponent = 12
+                int omni:rtx:pt:samplesPerIteration = 64
+                int omni:rtx:pt:samplesPerPixel = 64
+                color3f omni:rtx:rt:ambientLight:color = (0.1, 0.1, 0.1)
+                bool omni:rtx:rt:demoire = 0
+                bool omni:rtx:rt:ecoMode:enabled
+                bool omni:rtx:rt:lightcache:spatialCache:dontResolveConflicts = 1
+                bool omni:rtx:scene:hydra:materialSyncLoads = 1
+                bool omni:rtx:scene:hydra:mdlMaterialWarmup = 1
+                uint omni:rtx:viewTile:limit = 4294967295
+                rel orderedVars = </Render/Vars/LdrColor>
+                custom bool overrideClipRange = 0
+                uniform int2 resolution = (1280, 720)
+            }
+        }
+    }
+
+    def RenderSettings "OmniverseGlobalRenderSettings" (
+        prepend apiSchemas = ["OmniRtxSettingsGlobalRtAdvancedAPI_1", "OmniRtxSettingsGlobalPtAdvancedAPI_1"]
+        no_delete = true
+    )
+    {
+        rel products = </Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0>
+    }
+
+    def "Vars"
+    {
+        def RenderVar "LdrColor" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            uniform string sourceName = "LdrColor"
+        }
+    }
+}
+
+def Xform "Robotiq_2F_85" (
+    kind = "component"
+    prepend references = @./payloads/base.usda@
+    variants = {
+        string Fingertip = "Standard"
+        string Physics = "Physx_parallel_grip"
+    }
+    prepend variantSets = ["Fingertip", "Physics"]
+)
+{
+    string isaac:namespace (
+        displayName = "Namespace"
+        doc = "Namespace of the prim in Isaac Sim"
+    )
+
+    over "Robotiq_2F_85"
+    {
+        string isaac:namespace (
+            displayName = "Namespace"
+            doc = "Namespace of the prim in Isaac Sim"
+        )
+    }
+    variantSet "Physics" = {
+        "None" (
+            customData = {
+                string[] variantPrimPaths = ["Robotiq_2F_85/Joints"]
+            }
+        ) {
+            over "Robotiq_2F_85"
+            {
+                over "Joints" (
+                    active = false
+                )
+                {
+                }
+            }
+
+        }
+        "Physx_compliant" (
+            customData = {
+                string[] variantPrimPaths = ["."]
+            }
+            prepend payload = @./payloads/Robotiq_2F_85_compliant_physics.usda@
+        ) {
+
+        }
+        "Physx_parallel_grip" (
+            customData = {
+                string[] variantPrimPaths = ["."]
+            }
+            prepend payload = [
+                @./payloads/Robotiq_2F_85_parallel_grip_physics.usda@,
+                @./payloads/Robotiq_2F_85_parallel_grip_dowel_pins.usda@
+            ]
+        ) {
+
+        }
+        "Newton_compliant" (
+            customData = {
+                string[] variantPrimPaths = ["."]
+            }
+            prepend payload = @./payloads/Robotiq_2F_85_newton_compliant_physics.usda@
+        ) {
+
+        }
+        "Newton_parallel_grip" (
+            customData = {
+                string[] variantPrimPaths = ["."]
+            }
+            prepend payload = [
+                @./payloads/Robotiq_2F_85_newton_parallel_grip_physics.usda@,
+                @./payloads/Robotiq_2F_85_parallel_grip_dowel_pins.usda@
+            ]
+        ) {
+
+        }
+    }
+    variantSet "Fingertip" = {
+        "Standard" {
+
+        }
+        "Tactile_TSF85" (
+            prepend payload = @./payloads/Robotiq_2F_85_fingertip_tsf85.usda@
+            # Nested "SensorSim": the simulated TSF-85 sensor; its readers (Python) and docs are not part of this
+            # asset: https://github.com/robotiq/isaacsim_assets/tree/main/grippers/tactile
+            # "None" (default); "EffectiveResponse" (recommended: rigid pad, PhysX and Newton, any step
+            # rate); "Raycast" (compliant pad, PhysX only, needs a step of at least 240 Hz).
+            # Simulated and uncalibrated: the output is not the real sensor's counts.
+            variants = {
+                string SensorSim = "None"
+            }
+            prepend variantSets = "SensorSim"
+        ) {
+            over "Robotiq_2F_85"
+            {
+                over "left_fingertip" (
+                    prepend apiSchemas = ["PhysicsMassAPI"]
+                )
+                {
+                    point3f physics:centerOfMass = (0.00001, -0.047188, 0.1277)
+                    float3 physics:diagonalInertia = (0.00000205752, 0.00000572612, 0.00000656267)
+                    float physics:mass = 0.02879
+                    quatf physics:principalAxes = (0.54065704, 0.45573014, -0.45573014, 0.54065704)
+                }
+
+                over "right_fingertip" (
+                    prepend apiSchemas = ["PhysicsMassAPI"]
+                )
+                {
+                    point3f physics:centerOfMass = (-0.00001, 0.047188, 0.1277)
+                    float3 physics:diagonalInertia = (0.00000205752, 0.00000572612, 0.00000656267)
+                    float physics:mass = 0.02879
+                    quatf physics:principalAxes = (0.54065704, -0.45573014, 0.45573014, 0.54065704)
+                }
+            }
+
+            variantSet "SensorSim" = {
+                "None" {
+                }
+                "Raycast" (
+                    prepend payload = [
+                        @./payloads/Robotiq_2F_85_tactile_zones.usda@,
+                        @./payloads/Robotiq_2F_85_tactile_raycast.usda@
+                    ]
+                ) {
+                }
+                "EffectiveResponse" (
+                    prepend payload = [
+                        @./payloads/Robotiq_2F_85_tactile_zones.usda@,
+                        @./payloads/Robotiq_2F_85_tactile_effective_response.usda@
+                    ]
+                ) {
+                }
+            }
+        }
+    }
+}
+

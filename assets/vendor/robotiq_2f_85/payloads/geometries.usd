@@ -1,0 +1,14 @@
+#usda 1.0
+# Canonical SimReady "geometries" layer of the Isaac composition layout
+# (base / geometries / instances / materials). It is sublayered by ./base.usda so
+# it is part of the composed layer graph (SimReady ISA.001).
+#
+# The gripper's render/collision geometry for this asset is authored as the
+# invisible `/Meshes` scope inside ./base.usda (its per-link `visuals` reference
+# it, and the CAD parts live under ../parts/). This layer is the named geometry
+# slot in the layout; it is intentionally empty of overrides so it does not alter
+# that inline authoring.
+(
+    metersPerUnit = 1
+    upAxis = "Z"
+)

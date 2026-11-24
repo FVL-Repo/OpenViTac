@@ -1,0 +1,14 @@
+#usda 1.0
+# Canonical SimReady "instances" layer of the Isaac composition layout
+# (base / geometries / instances / materials). It is sublayered by ./base.usda so
+# it is part of the composed layer graph (SimReady ISA.001).
+#
+# In this asset the instancing is authored inline in ./base.usda: each link's
+# `visuals` child is an `instanceable = true` prim referencing the shared,
+# invisible `/Meshes` geometry. This layer is the named instances slot in the
+# layout; it is intentionally empty of overrides so it does not alter that inline
+# authoring.
+(
+    metersPerUnit = 1
+    upAxis = "Z"
+)

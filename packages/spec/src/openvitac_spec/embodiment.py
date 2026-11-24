@@ -116,15 +116,18 @@ _PANDA_PARALLEL = GripperSpec(
     capabilities=frozenset({"binary_close"}),
 )
 
-# 2F-85 finger_joint spans 0..45 deg: at 0 rad the linkages are folded and the pads
-# meet (closed), at 45 deg the pads are ~79 mm apart (open). Measured on the loaded
-# articulation: inner-finger origins 0.2 mm apart at 0 rad, 78.8 mm at 0.785 rad.
+# 2F-85 finger_joint spans 0..47 deg: at 0 rad the pads are 87.2868 mm apart (open),
+# at 47 deg they are 0.8134 mm apart -- the linkage's stop, 0.41 deg short of touching.
+# Measured on the built asset by joint-chain FK (xense-debug/robotiq-closure).
 _ROBOTIQ_85 = GripperSpec(
     kind="robotiq_85",
     joints=("finger_joint",),
-    open_value=0.7853981633974483,
-    close_value=0.0,
-    contact_bodies=("left_inner_finger", "right_inner_finger"),
+    open_value=0.0,
+    close_value=0.8203047484,
+    # The gel pads (and their ``pad_proxy`` colliders) ride the sensor bodies, which are
+    # rigid bodies of their own welded to the inner fingers: the pad contact force is
+    # reported on ``XenseWS_*``, not on the finger the sensor hangs from.
+    contact_bodies=("XenseWS_left", "XenseWS_right"),
     capabilities=frozenset({"binary_close", "adaptive_close", "percent_open"}),
 )
 

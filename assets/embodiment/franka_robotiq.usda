@@ -1,8 +1,261 @@
 #usda 1.0
 (
-    defaultPrim = "franka_robotiq_xensews_lift11p15_univtac_import_padonly"
-    subLayers = [
-        @robotiq_pad_proxy.usda@,
-        @franka_robotiq/Robots/Franka/XenseWS/Gripper/uipc_franka_robotiq_xensews.usda@
-    ]
+    defaultPrim = "panda"
+    metersPerUnit = 1
+    upAxis = "Z"
+    timeCodesPerSecond = 60
+    customLayerData = {
+        dictionary openvitac = {
+            string contract_version = "2"
+            string sensor_kind = "xense_ws"
+            string tool_center = "/panda/panda_hand/tool_center"
+            string[] pad_frames = ["/panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/left_inner_finger/Bracket_left/XenseWS_left/body/gelpad", "/panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/right_inner_finger/Bracket_right/XenseWS_right/body/gelpad"]
+            float[] pad_extent_m = [0.034312, 0.02075, 0.004]
+            string[] finger_joints = ["finger_joint", "right_outer_knuckle_joint"]
+            float open_travel_m = 0.043236700
+            float close_gap_m = 0.000813400
+            string close_gap_at = "upper"
+            int[] camera_resolution = [320, 160]
+            float[] camera_clipping_m = [0.024, 0.034]
+            string camera_calib = "640x480"
+            string provenance = "Franka Panda arm (panda_arm_hand.usd), Robotiq 2F-85 from robotiq/isaacsim_assets @646e8a5 (Physx_parallel_grip, Fingertip=Standard), two XenseWS sensors carried on the vendor 2F-85 adapter bracket g1-ws-robotiq-2f85.stp as tessellated in assets/vendor/xensews; each vendor package ships with its own licence."
+        }
+    }
 )
+
+def PhysicsScene "physicsScene"
+{
+}
+
+over "panda" (
+    prepend references = @./panda_arm_hand/panda_arm_hand.usd@
+)
+{
+    bool physxArticulation:enabledSelfCollisions = 0
+    int physxArticulation:solverVelocityIterationCount = 1
+    quatd xformOp:orient = (0.9461627006530762, 0, 0, -0.3236914277076721)
+    uniform token[] xformOpOrder = ["xformOp:orient"]
+
+    over "panda_leftfinger" (active = false)
+    {
+    }
+
+    over "panda_rightfinger" (active = false)
+    {
+    }
+
+    over "panda_hand"
+    {
+        over "panda_finger_joint1" (active = false)
+        {
+        }
+
+        over "panda_finger_joint2" (active = false)
+        {
+        }
+
+        # Closed-end pad midpoint: the linkage carries the pads +14.4276 mm along
+        # +z between finger_joint 0 and 47, so the authored open pose sits that far back.
+        def Xform "tool_center"
+        {
+            double3 xformOp:translate = (0, 0, 0.226125165)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def "Robotiq_2F_85" (
+            prepend references = @../vendor/robotiq_2f_85/Robotiq_2F_85.usda@
+        )
+        {
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0.066)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+            over "Robotiq_2F_85" (
+                delete apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+            )
+            {
+                over "root_joint" (active = false)
+                {
+                }
+
+                # tip_standard is an instance proxy: USD refuses any authoring on it, so the
+                # instance is what gets disabled -- that takes its mesh and convexHull together.
+                over "left_fingertip"
+                {
+                    over "visuals" (active = false)
+                    {
+                    }
+                }
+
+                over "right_fingertip"
+                {
+                    over "visuals" (active = false)
+                    {
+                    }
+                }
+
+                over "left_inner_finger"
+                {
+                    def "Bracket_left" (
+                        prepend references = @../vendor/xensews/bracket_2f85.usda@
+                        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                    )
+                    {
+                        quatd xformOp:orient = (-0.7071067811865476, 0, 0.7071067811865476, 0)
+                        double3 xformOp:translate = (-4.247227725778216e-13, -0.06592245436541395, 0.11642061448097231)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                        float physics:mass = 0.00324378
+                        point3f physics:centerOfMass = (-0.00275, 0.011064702, 0)
+                        vector3f physics:diagonalInertia = (2.836709e-7, 2.084802e-7, 9.80323e-8)
+                        quatf physics:principalAxes = (1, 0, 0, 0)
+
+                        over "body" (
+                            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+                        )
+                        {
+                            uniform token physics:approximation = "convexHull"
+                        }
+
+                        def "XenseWS_left" (
+                            prepend references = @../vendor/xensews/xensews_left.usda@
+                            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                        )
+                        {
+                            quatd xformOp:orient = (1, 0, 0, 0)
+                            double3 xformOp:translate = (0.02927692402298719, 0.022279015908685883, -1.2451006491742788e-06)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                            float physics:mass = 0.02335163
+                            point3f physics:centerOfMass = (-0.008876924, -0.01108335, 0)
+                            vector3f physics:diagonalInertia = (2.374794e-6, 6.843668e-6, 6.381226e-6)
+                            quatf physics:principalAxes = (1, 0, 0, 0)
+
+                            over "body"
+                            {
+                                over "case"
+                                {
+                                    over "body_mesh"
+                                    {
+                                        bool physics:collisionEnabled = 1
+                                    }
+                                }
+                            }
+                        }
+
+                        def PhysicsFixedJoint "sensor_mount"
+                        {
+                            rel physics:body0 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/left_inner_finger/Bracket_left>
+                            rel physics:body1 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/left_inner_finger/Bracket_left/XenseWS_left>
+                            float physics:breakForce = inf
+                            float physics:breakTorque = inf
+                            point3f physics:localPos0 = (0.029276924, 0.022279016, -0.0000012451006)
+                            quatf physics:localRot0 = (1, 0, 0, 0)
+                            point3f physics:localPos1 = (0, 0, 0)
+                            quatf physics:localRot1 = (1, 0, 0, 0)
+                        }
+                    }
+
+                    def PhysicsFixedJoint "bracket_mount"
+                    {
+                        rel physics:body0 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/left_inner_finger>
+                        rel physics:body1 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/left_inner_finger/Bracket_left>
+                        float physics:breakForce = inf
+                        float physics:breakTorque = inf
+                        point3f physics:localPos0 = (0, -0.06592245, 0.11642061)
+                        quatf physics:localRot0 = (-0.70710677, 0, 0.70710677, 0)
+                        point3f physics:localPos1 = (0, 0, 0)
+                        quatf physics:localRot1 = (1, 0, 0, 0)
+                    }
+                }
+
+                over "right_inner_finger"
+                {
+                    def "Bracket_right" (
+                        prepend references = @../vendor/xensews/bracket_2f85.usda@
+                        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                    )
+                    {
+                        quatd xformOp:orient = (0, 0.7071067811865475, 0, 0.7071067811865475)
+                        double3 xformOp:translate = (4.410271354579825e-13, 0.06592245436541316, 0.11642061448097234)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                        float physics:mass = 0.00324378
+                        point3f physics:centerOfMass = (-0.00275, 0.011064702, 0)
+                        vector3f physics:diagonalInertia = (2.836709e-7, 2.084802e-7, 9.80323e-8)
+                        quatf physics:principalAxes = (1, 0, 0, 0)
+
+                        over "body" (
+                            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+                        )
+                        {
+                            uniform token physics:approximation = "convexHull"
+                        }
+
+                        def "XenseWS_right" (
+                            prepend references = @../vendor/xensews/xensews_right.usda@
+                            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                        )
+                        {
+                            quatd xformOp:orient = (0, 1, 0, 0)
+                            double3 xformOp:translate = (0.02927692402290194, 0.022279015908685897, -1.247293117905928e-06)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                            float physics:mass = 0.02335163
+                            point3f physics:centerOfMass = (-0.008876924, 0.01108335, 0)
+                            vector3f physics:diagonalInertia = (2.374794e-6, 6.843668e-6, 6.381226e-6)
+                            quatf physics:principalAxes = (1, 0, 0, 0)
+
+                            over "body"
+                            {
+                                over "case"
+                                {
+                                    over "body_mesh"
+                                    {
+                                        bool physics:collisionEnabled = 1
+                                    }
+                                }
+                            }
+                        }
+
+                        def PhysicsFixedJoint "sensor_mount"
+                        {
+                            rel physics:body0 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/right_inner_finger/Bracket_right>
+                            rel physics:body1 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/right_inner_finger/Bracket_right/XenseWS_right>
+                            float physics:breakForce = inf
+                            float physics:breakTorque = inf
+                            point3f physics:localPos0 = (0.029276924, 0.022279016, -0.0000012472931)
+                            quatf physics:localRot0 = (0, 1, 0, 0)
+                            point3f physics:localPos1 = (0, 0, 0)
+                            quatf physics:localRot1 = (1, 0, 0, 0)
+                        }
+                    }
+
+                    def PhysicsFixedJoint "bracket_mount"
+                    {
+                        rel physics:body0 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/right_inner_finger>
+                        rel physics:body1 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/right_inner_finger/Bracket_right>
+                        float physics:breakForce = inf
+                        float physics:breakTorque = inf
+                        point3f physics:localPos0 = (0, 0.06592245, 0.11642061)
+                        quatf physics:localRot0 = (0, 0.70710677, 0, 0.70710677)
+                        point3f physics:localPos1 = (0, 0, 0)
+                        quatf physics:localRot1 = (1, 0, 0, 0)
+                    }
+                }
+            }
+        }
+
+        def PhysicsFixedJoint "robotiq_mount"
+        {
+            rel physics:body0 = </panda/panda_hand>
+            rel physics:body1 = </panda/panda_hand/Robotiq_2F_85/Robotiq_2F_85/base_link>
+            float physics:breakForce = inf
+            float physics:breakTorque = inf
+            point3f physics:localPos0 = (0, 0, 0.066)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+}

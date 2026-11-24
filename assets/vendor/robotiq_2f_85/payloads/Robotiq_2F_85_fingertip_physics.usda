@@ -1,0 +1,76 @@
+#usda 1.0
+(
+    # Engine-neutral fingertip physics for the 2F-85 (UsdPhysics only, no Physx*/Newton*):
+    # the screwed-on fingertip rigid bodies, their PhysicsFixedJoints (welded to
+    # inner_finger, rigid like a screw) and the Standard-pad mass/inertia. Sublayered by
+    # every Physics variant (PhysX and Newton alike), so it lives here once. Link frames
+    # coincide with inner_finger (identity), so the joint anchors are at the origin. The
+    # PhysX tip colliders live in Robotiq_2F_85_physx_common_physics.usda.
+    #
+    # Mass/inertia for the Standard pad are authored here (not in the "Fingertip"
+    # variantSet) so they are reachable on the configuration/ integration path,
+    # which sublayers this payload + base.usda but never Robotiq_2F_85.usda.
+    # The "Tactile_TSF85" Fingertip variant overrides them with the sensor-case
+    # values. This layer is only sublayered by Physics variants, so it never composes
+    # under Physics = "None", which stays pure kinematic geometry.
+    defaultPrim = "Robotiq_2F_85"
+    metersPerUnit = 1
+    subLayers = [
+        @./base.usda@
+    ]
+    upAxis = "Z"
+)
+
+over "Robotiq_2F_85"
+{
+    over "Robotiq_2F_85"
+    {
+        over "left_fingertip" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            kind = "group"
+        )
+        {
+            # Standard pad mass/inertia (default); overridden with the sensor-case
+            # values by the "Tactile_TSF85" Fingertip variant in the edit layer.
+            point3f physics:centerOfMass = (0, -0.05063447, 0.12616345)
+            float3 physics:diagonalInertia = (0.0000013906384, 0.0000033053761, 0.0000037298817)
+            float physics:mass = 0.02598171
+            quatf physics:principalAxes = (0.550085, -0.4443045, -0.4443045, 0.550085)
+
+            def PhysicsFixedJoint "FixedJoint"
+            {
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/left_inner_finger>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_fingertip>
+                float physics:breakForce = 3.4028235e38
+                float physics:breakTorque = 3.4028235e38
+                point3f physics:localPos0 = (0, 0, 0)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, 0, 0, 0)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+            }
+        }
+
+        over "right_fingertip" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            kind = "group"
+        )
+        {
+            point3f physics:centerOfMass = (0, 0.05063447, 0.12616345)
+            float3 physics:diagonalInertia = (0.0000013906384, 0.0000033053761, 0.0000037298817)
+            float physics:mass = 0.02598171
+            quatf physics:principalAxes = (0.550085, 0.4443045, 0.4443045, 0.550085)
+
+            def PhysicsFixedJoint "FixedJoint"
+            {
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/right_inner_finger>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_fingertip>
+                float physics:breakForce = 3.4028235e38
+                float physics:breakTorque = 3.4028235e38
+                point3f physics:localPos0 = (0, 0, 0)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, 0, 0, 0)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+            }
+        }
+    }
+}

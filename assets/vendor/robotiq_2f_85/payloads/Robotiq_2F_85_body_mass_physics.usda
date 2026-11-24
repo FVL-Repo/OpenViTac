@@ -1,0 +1,54 @@
+#usda 1.0
+# Single source of truth for the base_link + outer-knuckle rigid-body mass.
+#
+# These three bodies carry their colliders in the shared invisible /Meshes scope
+# (not as rigid-body children), so PhysX cannot auto-compute their mass — it must
+# be authored explicitly. The mass + centre-of-mass are identical across every
+# physics variant, so they live here and are `subLayers`-referenced by the
+# parallel-grip, compliant, and Newton payloads (same pattern as the shared
+# fingertip bodies). Variant-specific bits — e.g. the deliberately different
+# diagonal inertia in the Newton solver — are overridden per variant on top of
+# this layer. Mass + CoM come from the gripper's CAD; the diagonal inertia here
+# is the PhysX value (base_link is a fixed base, so its inertia is inert; the
+# outer knuckles get a small tensor on the order of the sibling knuckles).
+(
+    defaultPrim = "Robotiq_2F_85"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+over "Robotiq_2F_85"
+{
+    over "Robotiq_2F_85"
+    {
+        over "base_link" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        )
+        {
+            point3f physics:centerOfMass = (0, 0, 0.035508)
+            float3 physics:diagonalInertia = (0.001, 0.001, 0.001)
+            float physics:mass = 0.77744
+            quatf physics:principalAxes = (1, 0, 0, 0)
+        }
+
+        over "left_outer_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        )
+        {
+            point3f physics:centerOfMass = (0, -0.048356, 0.056017)
+            float3 physics:diagonalInertia = (0.00001, 0.000008, 0.000004)
+            float physics:mass = 0.02
+            quatf physics:principalAxes = (1, 0, 0, 0)
+        }
+
+        over "right_outer_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        )
+        {
+            point3f physics:centerOfMass = (0, 0.048356, 0.056017)
+            float3 physics:diagonalInertia = (0.00001, 0.000008, 0.000004)
+            float physics:mass = 0.02
+            quatf physics:principalAxes = (1, 0, 0, 0)
+        }
+    }
+}

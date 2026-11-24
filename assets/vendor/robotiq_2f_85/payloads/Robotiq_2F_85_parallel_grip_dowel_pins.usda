@@ -1,0 +1,50 @@
+#usda 1.0
+(
+    doc = """Visual-only dowel pins of the Robotiq_2F_85 parallel-grip variants (PhysX and Newton),
+one per finger, rigidly attached to the driver link (outer_knuckle) so they move with
+it. Payload of both *_parallel_grip Physics variants; no physics, no collision.
+
+Tune each pin with its xformOp:translate / xformOp:orient / xformOp:scale (link frame,
+metres). The pin part is a 3 x 12 mm cylinder along local Z (../parts/Robotiq_2F_85_dowel_pin.usda)."""
+    defaultPrim = "Robotiq_2F_85"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Robotiq_2F_85" (
+    kind = "assembly"
+)
+{
+    over Xform "Robotiq_2F_85"
+    {
+        over "left_outer_knuckle"
+        {
+            def Xform "dowel_pin" (
+                instanceable = false
+                kind = "subcomponent"
+                prepend references = @../parts/Robotiq_2F_85_dowel_pin.usda@
+            )
+            {
+                quatd xformOp:orient = (0.7071067811865476, 0, 0.7071067811865475, 0)
+                float3 xformOp:scale = (2, 2, 2.3204338550567627)
+                double3 xformOp:translate = (0, -0.05365795569703331, 0.05585638761791646)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+
+        over "right_outer_knuckle"
+        {
+            def Xform "dowel_pin" (
+                instanceable = false
+                kind = "subcomponent"
+                prepend references = @../parts/Robotiq_2F_85_dowel_pin.usda@
+            )
+            {
+                quatd xformOp:orient = (0.7071067811865476, 0, 0.7071067811865475, 0)
+                float3 xformOp:scale = (2, 2, 2.3204338550567627)
+                double3 xformOp:translate = (0, 0.05365795569703331, 0.05585638761791646)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+    }
+}
