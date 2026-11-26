@@ -1,4 +1,4 @@
-"""State-machine rollout: one Action, one step, one success read per tick."""
+"""Expert-policy rollout: one Action, one step, one success read per tick."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import unittest
 from collections.abc import Iterator
 from typing import Any, cast
 
-from openvitac_cli.commands.collect import _run_state_rollout
+from openvitac_cli.commands.collect import _run_expert_rollout
 from openvitac_sim.scene import StepLimitExceeded
 from openvitac_tasks import Action
 
@@ -58,25 +58,19 @@ class _FakeStateScene(_FakeRolloutScene):
         self.arm = _FakeArm()
 
 
-class _TickMachine:
+class _TickPolicy:
     def __init__(self, ticks: int) -> None:
         self.ticks = ticks
         self.emitted = 0
 
-    def init(self) -> int:
-        return 0
-
-    def step(self, world: object, state: int):
-        if state >= self.ticks:
+    def step(self, world: object) -> Action | None:
+        if self.emitted >= self.ticks:
             return None
         self.emitted += 1
-        return (
-            state + 1,
-            Action(
-                ee_pos=(0.4, 0.0, 0.1),
-                ee_quat=(0.0, 0.0, 0.0, 1.0),
-                gripper_qpos=0.0,
-            ),
+        return Action(
+            ee_pos=(0.4, 0.0, 0.1),
+            ee_quat=(0.0, 0.0, 0.0, 1.0),
+            gripper_qpos=0.0,
         )
 
 
@@ -104,7 +98,7 @@ def _never_success(world: object) -> Iterator[bool]:
 class RunStateRolloutTests(unittest.TestCase):
     def test_actions_are_applied_then_one_step_per_tick(self) -> None:
         scene = cast(Any, _FakeStateScene())
-        machine = _TickMachine(5)
+        policy = _TickPolicy(5)
         calls = 0
 
         def success(world: object) -> Iterator[bool]:
@@ -113,9 +107,9 @@ class RunStateRolloutTests(unittest.TestCase):
                 calls += 1
                 yield calls == 3
 
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            machine,
+            lambda: policy,
             success,
             steps=100,
             sink=lambda obs: None,
@@ -124,7 +118,7 @@ class RunStateRolloutTests(unittest.TestCase):
 
         self.assertEqual(outcome, "success")
         self.assertEqual(scene.steps, 3)
-        self.assertEqual(machine.emitted, 3)
+        self.assertEqual(policy.emitted, 3)
         self.assertEqual(len(scene.arm.ee_targets), 3)
         self.assertEqual(scene.arm.gripper.targets, [0.0, 0.0, 0.0])
         self.assertEqual(calls, 3)
@@ -139,9 +133,9 @@ class RunStateRolloutTests(unittest.TestCase):
                 seen.append(scene.steps)
                 yield scene.steps >= 1
 
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            _TickMachine(5),
+            lambda: _TickPolicy(5),
             success,
             steps=100,
             sink=lambda obs: None,
@@ -162,9 +156,9 @@ class RunStateRolloutTests(unittest.TestCase):
 
         scene = cast(Any, _FakeStateScene())
         with self.assertRaisesRegex(RuntimeError, "success boom"):
-            _run_state_rollout(
+            _run_expert_rollout(
                 scene,
-                _TickMachine(4),
+                lambda: _TickPolicy(4),
                 success,
                 steps=10,
                 sink=lambda obs: None,
@@ -188,9 +182,9 @@ class RunStateRolloutTests(unittest.TestCase):
 
         scene = cast(Any, _FakeStateScene())
         with self.assertRaisesRegex(TypeError, "must return an Iterator"):
-            _run_state_rollout(
+            _run_expert_rollout(
                 scene,
-                _TickMachine(4),
+                lambda: _TickPolicy(4),
                 cast(Any, success),
                 steps=10,
                 sink=lambda obs: None,
@@ -206,20 +200,16 @@ class RunStateRolloutTests(unittest.TestCase):
         )
         self.assertIsNone(scene.sink)
 
-    def test_machine_init_failure_is_a_policy_error(self) -> None:
+    def test_policy_factory_failure_is_a_policy_error(self) -> None:
         logger = cast(Any, _RecordingLogger())
 
-        class _RaisingInit:
-            def init(self) -> int:
-                raise RuntimeError("init boom")
-
-            def step(self, world: object, state: int):
-                return None
+        def raise_on_build() -> Any:
+            raise RuntimeError("factory boom")
 
         scene = cast(Any, _FakeStateScene())
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            _RaisingInit(),
+            raise_on_build,
             _never_success,
             steps=10,
             sink=lambda obs: None,
@@ -229,13 +219,13 @@ class RunStateRolloutTests(unittest.TestCase):
         self.assertEqual(outcome, "policy_error")
         self.assertEqual(scene.steps, 0)
         self.assertIsNone(scene.sink)
-        self.assertEqual(logger.exceptions, ["policy error in init"])
+        self.assertEqual(logger.exceptions, ["policy error in factory"])
 
-    def test_none_transition_ends_with_fail(self) -> None:
+    def test_none_ends_the_episode_with_fail(self) -> None:
         scene = cast(Any, _FakeStateScene())
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            _TickMachine(4),
+            lambda: _TickPolicy(4),
             _never_success,
             steps=100,
             sink=lambda obs: None,
@@ -246,32 +236,9 @@ class RunStateRolloutTests(unittest.TestCase):
         self.assertEqual(scene.steps, 4)
         self.assertIsNone(scene.sink)
 
-    def test_action_none_is_not_termination(self) -> None:
-        """A transition always carries an Action; ``(state, None)`` is an error."""
-
-        class _OptionalActionMachine:
-            def init(self) -> int:
-                return 0
-
-            def step(self, world: object, state: int):
-                return state, None
-
-        scene = cast(Any, _FakeStateScene())
-        with self.assertRaises(AttributeError):
-            _run_state_rollout(
-                scene,
-                _OptionalActionMachine(),
-                _never_success,
-                steps=10,
-                sink=lambda obs: None,
-                record_every=1,
-            )
-        self.assertEqual(scene.steps, 0)
-        self.assertIsNone(scene.sink)
-
     def test_step_limit_is_timeout_and_cleans_the_sink(self) -> None:
         scene = cast(Any, _FakeStateScene())
-        machine = _TickMachine(10)
+        policy = _TickPolicy(10)
         calls = 0
 
         def success(world: object) -> Iterator[bool]:
@@ -280,9 +247,9 @@ class RunStateRolloutTests(unittest.TestCase):
                 calls += 1
                 yield False
 
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            machine,
+            lambda: policy,
             success,
             steps=3,
             sink=lambda obs: None,
@@ -291,27 +258,24 @@ class RunStateRolloutTests(unittest.TestCase):
 
         self.assertEqual(outcome, "timeout")
         self.assertEqual(scene.steps, 3)
-        # The machine is polled before each step, so the refused fourth step
+        # The policy is polled before each step, so the refused fourth step
         # still gets one action staged; no physics step or success check runs.
-        self.assertEqual(machine.emitted, 4)
+        self.assertEqual(policy.emitted, 4)
         self.assertEqual(calls, 3)
         self.assertIsNone(scene.sink)
 
-    def test_machine_step_failure_keeps_frames_and_is_policy_error(self) -> None:
+    def test_policy_step_failure_keeps_frames_and_is_policy_error(self) -> None:
         logger = cast(Any, _RecordingLogger())
 
-        class _RaisingMachine:
+        class _RaisingPolicy:
             def __init__(self) -> None:
                 self.calls = 0
 
-            def init(self) -> int:
-                return 0
-
-            def step(self, world: object, state: int):
+            def step(self, world: object) -> Action | None:
                 self.calls += 1
                 if self.calls > 2:
                     raise RuntimeError("machine boom")
-                return state + 1, Action(
+                return Action(
                     ee_pos=(0.4, 0.0, 0.1),
                     ee_quat=(0.0, 0.0, 0.0, 1.0),
                     gripper_qpos=0.0,
@@ -319,9 +283,9 @@ class RunStateRolloutTests(unittest.TestCase):
 
         frames: list[object] = []
         scene = cast(Any, _FakeStateScene())
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            _RaisingMachine(),
+            _RaisingPolicy,
             _never_success,
             steps=10,
             sink=frames.append,
@@ -350,9 +314,9 @@ class RunStateRolloutTests(unittest.TestCase):
             return verdicts()
 
         scene = cast(Any, _FakeStateScene())
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            _TickMachine(5),
+            lambda: _TickPolicy(5),
             success,
             steps=100,
             sink=lambda obs: None,
@@ -372,9 +336,9 @@ class RunStateRolloutTests(unittest.TestCase):
                 yield count >= 3
 
         scene = cast(Any, _FakeStateScene())
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            _TickMachine(5),
+            lambda: _TickPolicy(5),
             success,
             steps=100,
             sink=lambda obs: None,

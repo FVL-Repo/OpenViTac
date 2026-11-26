@@ -6,19 +6,18 @@ bindings — and produce the pure :class:`openvitac_spec.SceneSpec` consumed by
 build time.  This package imports on any machine; it must not import
 ``openvitac_sim``, isaaclab, pxr, or pyuipc.
 
-The scripted policy is callable task content: ``expert`` is an explicit
-per-tick :class:`ExpertStateMachine` and ``success`` is a per-tick verdict
-generator, both typed against :class:`ExpertWorld`.  The collector applies each
-Action, steps physics once, and advances the success iterator; the first True
-ends the episode.  The capability-gated gripper handle does not mention a sensor
-variant.
+The scripted policy is callable task content: ``expert`` is a factory
+returning one per-episode :class:`ExpertPolicy`, and ``success`` is a per-tick
+verdict generator, both typed against :class:`ExpertWorld`.  The collector
+applies each Action, steps physics once, and advances the success iterator; the
+first True ends the episode.  The capability-gated gripper handle does not
+mention a sensor variant.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any
 
 from openvitac_spec import (
     Actor,
@@ -33,7 +32,7 @@ from openvitac_spec import (
 )
 
 from .expert import (
-    ExpertStateMachine,
+    ExpertPolicy,
     SuccessFn,
     TaskLogger,
 )
@@ -99,7 +98,7 @@ class Task:
     cameras: tuple[CameraSpec, ...]  # every entry is recorded, keyed by ``role``
     actors: tuple[Actor, ...]  # includes the infrastructure plate explicitly
     instruction: str
-    expert: ExpertStateMachine[Any]
+    expert: Callable[[], ExpertPolicy]
     success: SuccessFn
     light: LightSpec = field(default_factory=LightSpec)
     joints: tuple[Joint, ...] = ()  # mechanism links between actors

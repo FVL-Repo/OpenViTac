@@ -46,12 +46,7 @@ _GEAR_JOINT_DAMPING = 0.01  # quells free-spin jitter without resisting the turn
 class _TodoExpert:
     """Explicit stub: the scripted policy for this task is not yet written."""
 
-    def init(self) -> None:
-        raise NotImplementedError("expert not yet written for gear_assembly")
-
-    def step(
-        self, world: ExpertWorld, state: None
-    ) -> tuple[None, Action] | None:
+    def step(self, world: ExpertWorld) -> Action | None:
         raise NotImplementedError("expert not yet written for gear_assembly")
 
 
@@ -134,7 +129,7 @@ GearAssembly = Task(
         "Pick up the red gear, assemble it onto the base, and rotate it to turn the "
         "gear pair."
     ),
-    expert=_TodoExpert(),
+    expert=_TodoExpert,
     success=_todo_success,
     required_capabilities=frozenset({"adaptive_close", "percent_open"}),
 )

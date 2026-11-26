@@ -11,6 +11,7 @@ from _tool import gsmini_tool
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import pad_close_q, tool_center
+from openvitac_tasks.policy import MoveToolTo
 from openvitac_tasks.tasks.roughness_guided_regrasp import (
     _APPROACH_CLEARANCE,
     _BLOCK_WIDTH_BY_NAME,
@@ -19,6 +20,7 @@ from openvitac_tasks.tasks.roughness_guided_regrasp import (
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     RoughnessGuidedRegrasp,
+    _RegraspPolicy,
 )
 
 _TOOL = gsmini_tool()
@@ -161,33 +163,40 @@ def _world(seed: int) -> tuple[dict[str, str], _World]:
     return params, _World(params)
 
 
-def _run(world: _World) -> list[str]:
-    """Drive the registered state machine and record its phase sequence."""
-    machine = RoughnessGuidedRegrasp.expert
-    state = machine.init()
-    phases: list[str] = []
+def _policy() -> _RegraspPolicy:
+    """The task's registered expert, as its concrete policy type."""
+    policy = RoughnessGuidedRegrasp.expert()
+    assert isinstance(policy, _RegraspPolicy)
+    return policy
+
+
+def _run(world: _World) -> _RegraspPolicy:
+    """Drive the registered policy to its end."""
+    policy = _policy()
     while True:
-        result = machine.step(world, state)
-        if result is None:
-            return phases
-        state, action = result
-        phases.append(state.phase.name)
+        action = policy.step(world)
+        if action is None:
+            return policy
         world.apply(action)
 
 
-def _run_until_success(world: _World) -> tuple[str, float]:
-    """Drive the machine like the collector; return the first-true phase."""
-    machine = RoughnessGuidedRegrasp.expert
-    state = machine.init()
+def _run_until_success(world: _World) -> tuple[_RegraspPolicy, float]:
+    """Drive the policy like the collector; return it at the first-true tick."""
+    policy = _policy()
     verdicts = RoughnessGuidedRegrasp.success(world)
     while True:
-        result = machine.step(world, state)
-        if result is None:
+        action = policy.step(world)
+        if action is None:
             raise AssertionError("policy ended before the success gate")
-        state, action = result
         world.apply(action)
         if next(verdicts):
-            return str(state.phase.name), world.arm.gripper.joint_pos()
+            return policy, world.arm.gripper.joint_pos()
+
+
+def _shape(policy: _RegraspPolicy) -> tuple[str, ...]:
+    """The step types of the planned sequence, in order."""
+    assert policy.steps is not None
+    return tuple(type(step).__name__ for step in policy.steps)
 
 
 class RoughnessGuidedRegraspTests(unittest.TestCase):
@@ -236,8 +245,11 @@ class RoughnessGuidedRegraspTests(unittest.TestCase):
     def test_first_true_is_after_open_and_retract(self) -> None:
         _, world = _world(0)
         plate, _ = world.object_pose(_ROUGH_PLATE)
-        phase, gripper_qpos = _run_until_success(world)
-        self.assertEqual(phase, "PLACE_RETRACT")
+        policy, gripper_qpos = _run_until_success(world)
+        assert policy.steps is not None
+        # The place retract is the last step, so the first true verdict lands in it.
+        self.assertIsInstance(policy.steps.current, MoveToolTo)
+        self.assertEqual(policy.steps.index, len(policy.steps) - 1)
         self.assertGreaterEqual(
             gripper_qpos, world.arm.gripper.open_qpos - _SUCCESS_Z_TOLERANCE
         )
@@ -252,10 +264,25 @@ class RoughnessGuidedRegraspTests(unittest.TestCase):
 
     def test_expert_places_rough_directly_when_first_grasp_is_rough(self) -> None:
         _, world = _world(0)
-        phases = _run(world)
+        policy = _run(world)
         self.assertEqual(sum(event[0] == "close" for event in world.events), 1)
-        self.assertNotIn("PARK_APPROACH", phases)
-        self.assertEqual(phases[-1], "PLACE_RETRACT")
+        # Grasping the rough block first plans no park at all: one grasp and one
+        # place, in that order.
+        self.assertEqual(
+            _shape(policy),
+            (
+                "MoveToolTo",
+                "MoveToolTo",
+                "CloseTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "OpenGripper",
+                "MoveToolTo",
+            ),
+        )
+        assert policy.steps is not None
+        self.assertEqual(policy.steps.index, len(policy.steps))
         for got, expected in zip(world.blocks["smooth"], _LEFT, strict=True):
             self.assertAlmostEqual(got, expected, places=6)
         self.assertAlmostEqual(world.blocks["rough"][0], _YELLOW[0], places=6)
@@ -267,11 +294,33 @@ class RoughnessGuidedRegraspTests(unittest.TestCase):
         params, world = _world(4)
         self.assertEqual(params["rough_block_side"], "left")
         self.assertEqual(params["initial_grasp_side"], "right")
-        phases = _run(world)
+        policy = _run(world)
         self.assertEqual(sum(event[0] == "close" for event in world.events), 2)
-        self.assertIn("PARK_APPROACH", phases)
-        self.assertLess(phases.index("PARK_RETRACT"), phases.index("PLACE_APPROACH"))
-        self.assertEqual(phases[-1], "PLACE_RETRACT")
+        # Park the smooth block, grasp the rough one, then place it: two grasps
+        # and two releases, in that order.
+        self.assertEqual(
+            _shape(policy),
+            (
+                "MoveToolTo",
+                "MoveToolTo",
+                "CloseTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "OpenGripper",
+                "MoveToolTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "CloseTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "MoveToolTo",
+                "OpenGripper",
+                "MoveToolTo",
+            ),
+        )
+        assert policy.steps is not None
+        self.assertEqual(policy.steps.index, len(policy.steps))
         for got, expected in zip(world.blocks["smooth"], _PARK_RIGHT, strict=True):
             self.assertAlmostEqual(got, expected, places=6)
         self.assertAlmostEqual(world.blocks["rough"][0], _YELLOW[0], places=6)

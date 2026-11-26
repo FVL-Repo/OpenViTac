@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from openvitac_sim.tactile_bridge import PadSurface
     from openvitac_tasks import (
         Action,
-        ExpertStateMachine,
+        ExpertPolicy,
         SuccessFn,
     )
     from openvitac_tasks.expert import ArmHandle, ExpertWorld
@@ -126,9 +126,9 @@ def _tick_success(
     return read
 
 
-def _run_state_rollout(
+def _run_expert_rollout(
     scene: sim.Scene,
-    machine: ExpertStateMachine[Any],
+    expert: Callable[[], ExpertPolicy],
     success: SuccessFn,
     *,
     steps: int,
@@ -136,17 +136,18 @@ def _run_state_rollout(
     record_every: int,
     logger: _TaskLogger | None = None,
 ) -> Literal["success", "fail", "timeout", "policy_error"]:
-    """Drive an explicit per-tick state machine: apply action, then step once.
+    """Drive an explicit per-tick policy: apply action, then step once.
 
     ``success`` runs after every physics step; the first True latches the
     outcome, records the 1-based success step, and stops the rollout.  ``steps``
-    is the safety cap and maps to ``timeout``.  Exceptions from ``init``/``step``
-    are policy errors: the traceback is logged and the episode is finalized
-    with ``outcome=policy_error``; success-reader failures keep propagating.
+    is the safety cap and maps to ``timeout``.  Exceptions from building the
+    policy or from its ``step`` are policy errors: the traceback is logged and
+    the episode is finalized with ``outcome=policy_error``; success-reader
+    failures keep propagating.
     """
     if logger is not None:
         logger.info(
-            "expert start steps=%d mode=state-machine record_every=%d",
+            "expert start steps=%d mode=expert-policy record_every=%d",
             steps,
             record_every,
         )
@@ -159,23 +160,22 @@ def _run_state_rollout(
     tick = 0
     try:
         try:
-            state = machine.init()
+            policy = expert()
         except Exception:
             if logger is not None:
-                logger.exception("policy error in init")
+                logger.exception("policy error in factory")
             policy_error = True
         else:
             while True:
                 try:
-                    result = machine.step(scene, state)
+                    action = policy.step(scene)
                 except Exception:
                     if logger is not None:
                         logger.exception("policy error in step")
                     policy_error = True
                     break
-                if result is None:
+                if action is None:
                     break
-                state, action = result
                 _apply_action(scene, action)
                 scene.step()
                 tick += 1
@@ -840,10 +840,9 @@ def _record(
             scene.collect(sink, steps=steps, every=record_every)
             return writer.frame_count, len(cameras)
 
-        machine = spec.expert
-        outcome = _run_state_rollout(
+        outcome = _run_expert_rollout(
             scene,
-            machine,
+            spec.expert,
             spec.success,
             steps=steps,
             sink=sink,

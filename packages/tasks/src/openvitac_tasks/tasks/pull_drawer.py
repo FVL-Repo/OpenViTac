@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
-from enum import Enum, auto
 
 from openvitac_spec import (
     FRANKA_PANDA_GSMINI,
@@ -27,15 +25,22 @@ from openvitac_spec import (
 from ..base import Task
 from ..expert import Action, ExpertWorld
 from ..motion import (
-    Hold,
     Move,
     advance_move,
     begin_move,
     ee_for_tool_center,
-    pad_close_q,
     quat_conjugate,
     quat_mul,
     quat_rotate,
+)
+from ..policy import (
+    CloseTo,
+    Command,
+    MoveEeTo,
+    OpenGripper,
+    Point,
+    Policy,
+    Sequence,
 )
 
 Vec3 = tuple[float, float, float]
@@ -147,176 +152,85 @@ def _hand_target(
     return (hx - _GRASP_BACKOFF_X, hy, hz)
 
 
-class _PullPhase(Enum):
-    INIT = auto()
-    OPEN = auto()
-    APPROACH = auto()
-    DESCEND = auto()
-    CLOSE = auto()
-    PULL = auto()
-    DONE = auto()
+def _move_ee(target: Point, quat: Quat, *, ticks: int) -> MoveEeTo:
+    """One legacy move to an EE point, then the 60-tick re-command."""
+    return MoveEeTo(target, quat, ticks=ticks, settle_ticks=60)
 
 
-@dataclass(frozen=True)
-class _PullState:
-    phase: _PullPhase
-    quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    command_pos: Vec3 = (0.0, 0.0, 0.0)
-    command_quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    gripper_qpos: float = 0.0
-    move: Move | None = None
-    hold: Hold | None = None
-    pull_index: int = 0
+class _PullSegment:
+    """One pull stroke, repeated until the drawer is out or the budget is spent.
 
-
-def _action(state: _PullState) -> Action:
-    return Action(state.command_pos, state.command_quat, state.gripper_qpos)
-
-
-def _start_pull(
-    world: ExpertWorld, state: _PullState
-) -> tuple[_PullState, Action]:
-    ex, ey, ez = world.arm.ee_pose()[0]
-    goal = (ex - _PULL_SEGMENT, ey, ez)
-    move, action = begin_move(
-        world,
-        goal,
-        state.quat,
-        ticks=60,
-        settle_ticks=60,
-        gripper_qpos=state.gripper_qpos,
-    )
-    return (
-        replace(
-            state,
-            phase=_PullPhase.PULL,
-            command_pos=goal,
-            command_quat=state.quat,
-            move=move,
-        ),
-        action,
-    )
-
-
-def _enter(
-    phase: _PullPhase, world: ExpertWorld, state: _PullState
-) -> tuple[_PullState, Action]:
-    """Compute ``phase``'s targets from the live world and its first action."""
-    match phase:
-        case _PullPhase.OPEN:
-            qpos = world.arm.gripper.open_qpos
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(200))
-            return state, _action(state)
-        case _PullPhase.APPROACH:
-            handle = _handle_world(world)
-            goal = _hand_target(
-                world, handle, state.quat, clearance=_APPROACH_DISTANCE
-            )
-            ticks = 200
-        case _PullPhase.DESCEND:
-            handle = _handle_world(world)
-            goal = _hand_target(world, handle, state.quat, clearance=0.0)
-            ticks = 250
-        case _PullPhase.CLOSE:
-            qpos = pad_close_q(
-                world.arm.tool, _HANDLE_WIDTH, _GRASP_OVERTRAVEL
-            )
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(300))
-            return state, _action(state)
-        case _PullPhase.PULL:
-            return _start_pull(world, state)
-        case _PullPhase.INIT | _PullPhase.DONE:
-            raise AssertionError(f"{phase} has no entry targets")
-    move, action = begin_move(
-        world,
-        goal,
-        state.quat,
-        ticks=ticks,
-        settle_ticks=60,
-        gripper_qpos=state.gripper_qpos,
-    )
-    return (
-        replace(
-            state,
-            phase=phase,
-            command_pos=goal,
-            command_quat=state.quat,
-            move=move,
-        ),
-        action,
-    )
-
-
-def _advance(
-    phase: _PullPhase, world: ExpertWorld, state: _PullState
-) -> tuple[_PullState, Action] | None:
-    """Follow ``phase``'s transition, including the pull-segment loop."""
-    if phase is _PullPhase.PULL:
-        if next(_success(world), False):
-            return None
-        if state.pull_index + 1 >= _PULL_STEPS:
-            return None
-        state = replace(state, move=None, pull_index=state.pull_index + 1)
-        return _start_pull(world, state)
-    if phase is _PullPhase.CLOSE:
-        return _start_pull(world, replace(state, move=None, hold=None))
-    next_phase = {
-        _PullPhase.OPEN: _PullPhase.APPROACH,
-        _PullPhase.APPROACH: _PullPhase.DESCEND,
-        _PullPhase.DESCEND: _PullPhase.CLOSE,
-        _PullPhase.PULL: _PullPhase.DONE,
-    }[phase]
-    return _enter(next_phase, world, state)
-
-
-class _PullExpert:
-    """Per-tick scripted policy: open, approach the handle, close, pull.
-
-    Phase order: OPEN -> APPROACH -> DESCEND -> CLOSE -> PULL (up to
-    ``_PULL_STEPS`` segments, each stopping on the success gate) -> DONE.
-    Each move keeps the legacy tick budget and 60-tick re-command.
+    Each stroke drags the hand ``_PULL_SEGMENT`` along world -x with the legacy
+    tick budget; a finished stroke ends the whole pull once the success gate
+    fires or ``_PULL_STEPS`` strokes have run.
     """
 
-    def init(self) -> _PullState:
-        return _PullState(phase=_PullPhase.INIT)
+    def __init__(self, quat: Quat) -> None:
+        self.quat = quat
+        self.finished = False
+        self._move: Move | None = None
+        self._index = 0
 
-    def step(
-        self, world: ExpertWorld, state: _PullState
-    ) -> tuple[_PullState, Action] | None:
-        if state.phase is _PullPhase.INIT:
-            pos, quat = world.arm.ee_pose()
-            state = replace(
-                state,
-                quat=quat,
-                command_pos=pos,
-                command_quat=quat,
-                gripper_qpos=world.arm.gripper.joint_pos(),
-            )
-            return _enter(_PullPhase.OPEN, world, state)
-        if state.phase is _PullPhase.DONE:
-            return None
-        if state.move is not None:
-            advanced = advance_move(world, state.move, state.gripper_qpos)
+    def step(self, world: ExpertWorld, cmd: Command) -> Action | None:
+        if self.finished:
+            raise RuntimeError("pull already finished")
+        if self._move is not None:
+            advanced = advance_move(world, self._move, cmd.gripper_qpos)
             if advanced is not None:
-                move, action = advanced
-                return (
-                    replace(
-                        state,
-                        move=move,
-                        command_pos=action.ee_pos,
-                        command_quat=action.ee_quat,
-                    ),
-                    action,
-                )
-            state = replace(state, move=None)
-            return _advance(state.phase, world, state)
-        if state.hold is not None:
-            hold = state.hold.consume()
-            if hold is not None:
-                return replace(state, hold=hold), _action(state)
-            state = replace(state, hold=None)
-            return _advance(state.phase, world, state)
-        raise AssertionError(f"phase {state.phase} has no active command")
+                self._move, action = advanced
+                return action
+            self._move = None
+            if next(_success(world), False):
+                self.finished = True
+                return None
+            if self._index + 1 >= _PULL_STEPS:
+                self.finished = True
+                return None
+            self._index += 1
+        ex, ey, ez = world.arm.ee_pose()[0]
+        self._move, action = begin_move(
+            world,
+            (ex - _PULL_SEGMENT, ey, ez),
+            self.quat,
+            ticks=60,
+            settle_ticks=60,
+            gripper_qpos=cmd.gripper_qpos,
+        )
+        return action
+
+
+class _PullPolicy(Policy):
+    """Open, approach the handle, close, then pull the drawer out.
+
+    The step sequence spells out the legacy phase order -- OPEN, APPROACH,
+    DESCEND, CLOSE, PULL -- with the legacy tick budgets: a 200-tick open, a
+    300-tick close and the 60-tick re-command on every move.
+    """
+
+    def plan(self, world: ExpertWorld) -> Sequence:
+        """Read the live hand pose and chain the moves."""
+        _, quat = world.arm.ee_pose()
+
+        def handle() -> Vec3:
+            return _handle_world(world)
+
+        def approach() -> Vec3:
+            return _hand_target(world, handle(), quat, clearance=_APPROACH_DISTANCE)
+
+        def descend() -> Vec3:
+            return _hand_target(world, handle(), quat, clearance=0.0)
+
+        return Sequence(
+            OpenGripper(hold_ticks=200),  # OPEN
+            _move_ee(approach, quat, ticks=200),  # APPROACH
+            _move_ee(descend, quat, ticks=250),  # DESCEND
+            CloseTo(
+                _HANDLE_WIDTH,
+                overtravel=_GRASP_OVERTRAVEL,
+                hold_ticks=300,
+            ),  # CLOSE
+            _PullSegment(quat),  # PULL
+        )
 
 
 def _success(world: ExpertWorld) -> Iterator[bool]:
@@ -419,7 +333,7 @@ PullDrawer = Task(
         ),
     ),
     instruction="Grasp the upper drawer handle and pull the upper drawer open.",
-    expert=_PullExpert(),
+    expert=_PullPolicy,
     success=_success,
     joint_pos=_TASK_INITIAL_JOINT_POS,
     required_capabilities=frozenset({"binary_close"}),

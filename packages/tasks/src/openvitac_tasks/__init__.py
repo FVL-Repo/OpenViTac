@@ -10,7 +10,7 @@ from .base import (
 )
 from .expert import (
     Action,
-    ExpertStateMachine,
+    ExpertPolicy,
     ExpertWorld,
     GripperHandle,
     Quat,
@@ -34,7 +34,7 @@ __all__ = [
     "TASKS",
     "Action",
     "EpisodeRandomization",
-    "ExpertStateMachine",
+    "ExpertPolicy",
     "ExpertWorld",
     "GearAssembly",
     "GripperHandle",

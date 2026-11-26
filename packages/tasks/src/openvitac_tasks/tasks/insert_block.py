@@ -12,9 +12,8 @@ and falls to the box floor.
 from __future__ import annotations
 
 import random
-from collections.abc import Iterator
-from dataclasses import dataclass, replace
-from enum import Enum, auto
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 
 from openvitac_spec import (
     FRANKA_PANDA_GSMINI,
@@ -26,17 +25,16 @@ from openvitac_spec import (
 )
 
 from ..base import EpisodeRandomization, Task
-from ..expert import Action, ExpertWorld, Quat, Vec3
-from ..motion import (
-    Hold,
-    Move,
-    advance_move,
-    align_pad_to_face,
-    begin_move,
-    ee_for_tool_center,
-    grasp_depth,
-    pad_close_q,
-    quat_rotate,
+from ..expert import ExpertWorld, Quat, Vec3
+from ..motion import align_pad_to_face, grasp_depth, quat_rotate
+from ..policy import (
+    CloseTo,
+    MoveEeTo,
+    MoveToolTo,
+    OpenGripper,
+    Point,
+    Policy,
+    Sequence,
 )
 
 _HEAD_CAM_QUAT_XYZW = (0.362287, 0.344597, 0.596861, 0.627501)
@@ -163,56 +161,31 @@ def _world_to_box(
     )
 
 
-class _BlockPhase(Enum):
-    INIT = auto()
-    PREGRASP = auto()
-    DESCEND = auto()
-    CLOSE = auto()
-    LIFT = auto()
-    CARRY = auto()
-    ALIGN = auto()
-    PRE_INSERT = auto()
-    INSERT = auto()
-    OPEN = auto()
-    RETRACT = auto()
-    SETTLE = auto()
-    DONE = auto()
-
-
-_NEXT = {
-    _BlockPhase.PREGRASP: _BlockPhase.DESCEND,
-    _BlockPhase.DESCEND: _BlockPhase.CLOSE,
-    _BlockPhase.CLOSE: _BlockPhase.LIFT,
-    _BlockPhase.LIFT: _BlockPhase.CARRY,
-    _BlockPhase.CARRY: _BlockPhase.ALIGN,
-    _BlockPhase.ALIGN: _BlockPhase.PRE_INSERT,
-    _BlockPhase.PRE_INSERT: _BlockPhase.INSERT,
-    _BlockPhase.INSERT: _BlockPhase.OPEN,
-    _BlockPhase.OPEN: _BlockPhase.RETRACT,
-    _BlockPhase.RETRACT: _BlockPhase.SETTLE,
-    _BlockPhase.SETTLE: _BlockPhase.DONE,
-}
-
 # Legacy per-move tick budgets.  Each move also gets the 60-tick re-command.
 _MOVE_TICKS = 60
 _SETTLE_TICKS = 60
 
 
-@dataclass(frozen=True)
-class _BlockState:
-    phase: _BlockPhase
-    quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    command_pos: Vec3 = (0.0, 0.0, 0.0)
-    command_quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    gripper_qpos: float = 0.0
-    spec: _BlockSpec | None = None
-    move: Move | None = None
-    hold: Hold | None = None
-    retract_pos: Vec3 = (0.0, 0.0, 0.0)
+def _move(
+    target: Point,
+    quat: Quat,
+    *,
+    clearance: float = 0.0,
+    ticks: int = _MOVE_TICKS,
+) -> MoveToolTo:
+    """One legacy move to a tool-center point, then the task's settle."""
+    return MoveToolTo(
+        target,
+        quat,
+        clearance=clearance,
+        ticks=ticks,
+        settle_ticks=_SETTLE_TICKS,
+    )
 
 
-def _action(state: _BlockState) -> Action:
-    return Action(state.command_pos, state.command_quat, state.gripper_qpos)
+def _move_ee(target: Point, quat: Quat, *, ticks: int = _MOVE_TICKS) -> MoveEeTo:
+    """One legacy move to an EE point, then the same settle re-command."""
+    return MoveEeTo(target, quat, ticks=ticks, settle_ticks=_SETTLE_TICKS)
 
 
 def _align_hand(
@@ -222,7 +195,7 @@ def _align_hand(
     box_pos: tuple[float, float, float],
     box_quat: tuple[float, float, float, float],
     block_z: float,
-) -> tuple[float, float, float]:
+) -> Vec3:
     """Hand target that puts the held block's origin at ``(hole, block_z)``.
 
     The grasp can centre the block a few millimetres off the hand axis, so
@@ -234,181 +207,91 @@ def _align_hand(
     return hole_x + (ex - gx), hole_y + (ey - gy), ez + (block_z - gz)
 
 
-def _enter(
-    phase: _BlockPhase, world: ExpertWorld, state: _BlockState
-) -> tuple[_BlockState, Action]:
-    """Compute ``phase``'s targets from the live world and its first action."""
-    spec = state.spec
-    assert spec is not None
-    tool = world.arm.tool
-    match phase:
-        case _BlockPhase.PREGRASP:
-            # The pad plane is aligned to the block face, so the hand's finger
-            # axis is tilted; the pad midpoint (not the hand origin) must sit on
-            # the block's mid-plane at _GRASP_HEIGHT.
-            (bx, by, bz), _ = world.object_pose(spec.actor)
-            goal = ee_for_tool_center(
-                (bx, by, bz + _GRASP_HEIGHT),
-                state.quat,
-                tool,
-                clearance=_TRANSIT_CLEARANCE,
-            )
-            ticks = 120
-        case _BlockPhase.DESCEND:
-            (bx, by, bz), _ = world.object_pose(spec.actor)
-            goal = ee_for_tool_center((bx, by, bz + _GRASP_HEIGHT), state.quat, tool)
-            ticks = _MOVE_TICKS
-        case _BlockPhase.CLOSE:
-            # Pad face GRASP_OVERTRAVEL into this block per side.
-            qpos = pad_close_q(tool, _BLOCK_WIDTH_BY_ACTOR[spec.actor])
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(40))
-            return state, _action(state)
-        case _BlockPhase.LIFT:
-            hx, hy, _ = world.arm.ee_pose()[0]
-            box_pos, box_quat = world.object_pose(_BOX_PRIM)
-            lift_z = _align_hand(
-                world, spec.actor, spec.hole_xy, box_pos, box_quat, _CARRY_BLOCK_Z
-            )[2]
-            goal = (hx, hy, lift_z)
-            ticks = 90
-        case _BlockPhase.CARRY:
-            box_pos, box_quat = world.object_pose(_BOX_PRIM)
-            goal = _align_hand(
-                world, spec.actor, spec.hole_xy, box_pos, box_quat, _CARRY_BLOCK_Z
-            )
-            ticks = 150
-        case _BlockPhase.ALIGN:
-            box_pos, box_quat = world.object_pose(_BOX_PRIM)
-            goal = _align_hand(
-                world,
-                spec.actor,
-                spec.hole_xy,
-                box_pos,
-                box_quat,
-                world.object_pose(spec.actor)[0][2],
-            )
-            ticks = _MOVE_TICKS
-        case _BlockPhase.PRE_INSERT:
-            box_pos, box_quat = world.object_pose(_BOX_PRIM)
-            box_top = box_pos[2] + _BOX_SIZE
-            goal = _align_hand(
-                world,
-                spec.actor,
-                spec.hole_xy,
-                box_pos,
-                box_quat,
-                box_top + _PRE_INSERT_CLEARANCE,
-            )
-            ticks = 120
-        case _BlockPhase.INSERT:
-            box_pos, box_quat = world.object_pose(_BOX_PRIM)
-            box_top = box_pos[2] + _BOX_SIZE
-            goal = _align_hand(
-                world,
-                spec.actor,
-                spec.hole_xy,
-                box_pos,
-                box_quat,
-                box_top + _PRE_INSERT_CLEARANCE - _INSERT_DEPTH,
-            )
-            ticks = 180
-        case _BlockPhase.OPEN:
-            qpos = world.arm.gripper.open_qpos
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
-            return state, _action(state)
-        case _BlockPhase.RETRACT:
-            rx, ry, rz = world.arm.ee_pose()[0]
-            goal = (rx, ry, rz + _RELEASE_RETRACT)
-            ticks = _MOVE_TICKS
-            state = replace(state, retract_pos=goal)
-        case _BlockPhase.SETTLE:
-            goal = state.retract_pos
-            ticks = _SETTLE_STEPS
-        case _BlockPhase.INIT | _BlockPhase.DONE:
-            raise AssertionError(f"{phase} has no entry targets")
-    move, action = begin_move(
-        world,
-        goal,
-        state.quat,
-        ticks=ticks,
-        settle_ticks=_SETTLE_TICKS,
-        gripper_qpos=state.gripper_qpos,
-    )
-    return (
-        replace(
-            state,
-            phase=phase,
-            command_pos=goal,
-            command_quat=state.quat,
-            move=move,
-        ),
-        action,
-    )
+class _Latch:
+    """A point read once, on a step's first tick, and reused afterwards."""
+
+    def __init__(self, point: Callable[[], Vec3]) -> None:
+        self._point = point
+        self._value: Vec3 | None = None
+
+    def __call__(self) -> Vec3:
+        if self._value is None:
+            self._value = self._point()
+        return self._value
 
 
-class _BlockExpert:
-    """Per-tick scripted policy: pick the block, insert, release, settle.
+class _BlockPolicy(Policy):
+    """Grasp the sampled block, carry it to its hole, release, retract, settle.
 
-    Phase order: PREGRASP -> DESCEND -> CLOSE -> LIFT -> CARRY -> ALIGN ->
-    PRE_INSERT -> INSERT -> OPEN -> RETRACT -> SETTLE -> DONE.  Each move keeps
-    the legacy tick budget and 60-tick re-command; the collector applies every
-    Action and owns the only ``scene.step()``.
+    The step sequence spells out the legacy phase order -- PREGRASP, DESCEND,
+    CLOSE, LIFT, CARRY, ALIGN, PRE_INSERT, INSERT, OPEN, RETRACT, SETTLE -- with
+    the legacy tick budgets, a 40-tick grasp hold and a 60-tick release hold.
     """
 
-    def init(self) -> _BlockState:
-        return _BlockState(phase=_BlockPhase.INIT)
+    def plan(self, world: ExpertWorld) -> Sequence:
+        """Read the target block, square the pads to its face, chain the moves."""
+        spec = _target(world)
+        _, quat = world.arm.ee_pose()
+        # Parallel the pad plane to the target block's +/-y face; see
+        # roughness_classification for the lever-arm rationale.
+        _, bquat = world.object_pose(spec.actor)
+        quat = align_pad_to_face(
+            world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+        )
 
-    def step(
-        self, world: ExpertWorld, state: _BlockState
-    ) -> tuple[_BlockState, Action] | None:
-        if state.phase is _BlockPhase.INIT:
-            pos, quat = world.arm.ee_pose()
-            spec = _target(world)
-            # Parallel the pad plane to the target block's +/-y face; see
-            # roughness_classification for the lever-arm rationale.
-            _, bquat = world.object_pose(spec.actor)
-            quat = align_pad_to_face(
-                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+        # Every goal below is read on the tick its move starts, like the phase
+        # machine did -- the block moves under the closing pads and the carry
+        # follows it.  ``grasp`` is a *tool-center* point; ``hole`` already is the
+        # hand target ``_align_hand`` nulls the grasped block against, like the
+        # lift and the retract's own offsets.
+        def grasp() -> Vec3:
+            (bx, by, bz), _ = world.object_pose(spec.actor)
+            return (bx, by, bz + _GRASP_HEIGHT)
+
+        def hole(block_z: float) -> Vec3:
+            box_pos, box_quat = world.object_pose(_BOX_PRIM)
+            return _align_hand(
+                world, spec.actor, spec.hole_xy, box_pos, box_quat, block_z
             )
-            state = replace(
-                state,
-                quat=quat,
-                command_pos=pos,
-                command_quat=quat,
-                gripper_qpos=world.arm.gripper.joint_pos(),
-                spec=spec,
-            )
-            return _enter(_BlockPhase.PREGRASP, world, state)
-        if state.phase is _BlockPhase.DONE:
-            return None
-        if state.move is not None:
-            advanced = advance_move(world, state.move, state.gripper_qpos)
-            if advanced is not None:
-                move, action = advanced
-                return (
-                    replace(
-                        state,
-                        move=move,
-                        command_pos=action.ee_pos,
-                        command_quat=action.ee_quat,
-                    ),
-                    action,
-                )
-            state = replace(state, move=None)
-            next_phase = _NEXT[state.phase]
-            if next_phase is _BlockPhase.DONE:
-                return None
-            return _enter(next_phase, world, state)
-        if state.hold is not None:
-            hold = state.hold.consume()
-            if hold is not None:
-                return replace(state, hold=hold), _action(state)
-            state = replace(state, hold=None)
-            next_phase = _NEXT[state.phase]
-            if next_phase is _BlockPhase.DONE:
-                return None
-            return _enter(next_phase, world, state)
-        raise AssertionError(f"phase {state.phase} has no active command")
+
+        def box_top() -> float:
+            return world.object_pose(_BOX_PRIM)[0][2] + _BOX_SIZE
+
+        def lift() -> Vec3:
+            hx, hy, _ = world.arm.ee_pose()[0]
+            return (hx, hy, hole(_CARRY_BLOCK_Z)[2])
+
+        def carry() -> Vec3:
+            return hole(_CARRY_BLOCK_Z)
+
+        def align() -> Vec3:
+            return hole(world.object_pose(spec.actor)[0][2])
+
+        def pre_insert() -> Vec3:
+            return hole(box_top() + _PRE_INSERT_CLEARANCE)
+
+        def insert() -> Vec3:
+            return hole(box_top() + _PRE_INSERT_CLEARANCE - _INSERT_DEPTH)
+
+        def retract() -> Vec3:
+            rx, ry, rz = world.arm.ee_pose()[0]
+            return (rx, ry, rz + _RELEASE_RETRACT)
+
+        # SETTLE re-drives the retract's goal, not a freshly sampled pose.
+        retracted = _Latch(retract)
+        return Sequence(
+            _move(grasp, quat, clearance=_TRANSIT_CLEARANCE, ticks=120),  # PREGRASP
+            _move(grasp, quat),  # DESCEND
+            CloseTo(_BLOCK_WIDTH_BY_ACTOR[spec.actor], hold_ticks=40),  # CLOSE
+            _move_ee(lift, quat, ticks=90),  # LIFT
+            _move_ee(carry, quat, ticks=150),  # CARRY
+            _move_ee(align, quat),  # ALIGN
+            _move_ee(pre_insert, quat, ticks=120),  # PRE_INSERT
+            _move_ee(insert, quat, ticks=180),  # INSERT
+            OpenGripper(hold_ticks=60),  # OPEN
+            _move_ee(retracted, quat),  # RETRACT
+            _move_ee(retracted, quat, ticks=_SETTLE_STEPS),  # SETTLE
+        )
 
 
 def _success(world: ExpertWorld) -> Iterator[bool]:
@@ -555,7 +438,7 @@ InsertBlock = Task(
     instruction=(
         "Insert the blue half cylinder into the matching hole in the yellow box."
     ),
-    expert=_BlockExpert(),
+    expert=_BlockPolicy,
     success=_success,
     randomizer=_randomize,
     joint_pos=_TASK_INITIAL_JOINT_POS,

@@ -13,8 +13,8 @@ Arm motion/state lives on an explicit :class:`ArmHandle` reached through
 ``ExpertWorld.arm``; the current worlds are single-arm, so that default arm is
 the only handle until a multi-arm world adds an ``arms`` mapping.
 
-The scripted policy is an explicit per-tick :class:`ExpertStateMachine`; a
-success check is an iterator advanced after every physics step.
+The scripted policy is an explicit per-tick :class:`ExpertPolicy`, built fresh
+per episode; a success check is an iterator advanced after every physics step.
 """
 
 from __future__ import annotations
@@ -152,15 +152,11 @@ class Action:
     gripper_qpos: float
 
 
-class ExpertStateMachine[S](Protocol):
+class ExpertPolicy(Protocol):
     """Per-tick scripted policy."""
 
-    def init(self) -> S: ...
-
-    def step(
-        self, world: ExpertWorld, state: S
-    ) -> tuple[S, Action] | None:
-        """Return ``(state, action)``, or ``None`` to end the episode.
+    def step(self, world: ExpertWorld) -> Action | None:
+        """The tick's action, or ``None`` to end the episode.
 
         ``world`` is the post-step world; raising is a policy error.
         """

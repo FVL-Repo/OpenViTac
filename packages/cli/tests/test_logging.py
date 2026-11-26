@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from openvitac_cli.commands.collect import _run_state_rollout
+from openvitac_cli.commands.collect import _run_expert_rollout
 from openvitac_cli.run_log import run_logger
 from openvitac_cli.tee import tee_output
 from openvitac_sim.scene import Scene, StepLimitExceeded
@@ -48,34 +48,29 @@ class _FakeScene:
         self.steps += 1
 
 
-class _RaisingMachine:
-    def init(self) -> int:
-        return 0
-
-    def step(self, world: object, state: int):
+class _RaisingPolicy:
+    def step(self, world: object) -> Action | None:
         raise RuntimeError("expert boom")
 
 
-class _ForeverMachine:
-    def init(self) -> int:
-        return 0
-
-    def step(self, world: object, state: int):
-        return state + 1, Action(
+class _ForeverPolicy:
+    def step(self, world: object) -> Action | None:
+        return Action(
             ee_pos=(0.4, 0.0, 0.1),
             ee_quat=(0.0, 0.0, 0.0, 1.0),
             gripper_qpos=0.0,
         )
 
 
-class _OneActionMachine:
-    def init(self) -> int:
-        return 0
+class _OneActionPolicy:
+    def __init__(self) -> None:
+        self.emitted = 0
 
-    def step(self, world: object, state: int):
-        if state >= 1:
+    def step(self, world: object) -> Action | None:
+        if self.emitted >= 1:
             return None
-        return state + 1, Action(
+        self.emitted += 1
+        return Action(
             ee_pos=(0.4, 0.0, 0.1),
             ee_quat=(0.0, 0.0, 0.0, 1.0),
             gripper_qpos=0.0,
@@ -179,9 +174,9 @@ class BoundaryLoggingTests(unittest.TestCase):
                 tee_output(path),
                 run_logger(task="failing", seed=3, run_id="run") as log,
             ):
-                outcome = _run_state_rollout(
+                outcome = _run_expert_rollout(
                     scene,
-                    _RaisingMachine(),
+                    _RaisingPolicy,
                     _never,
                     steps=10,
                     sink=lambda obs: None,
@@ -203,9 +198,9 @@ class BoundaryLoggingTests(unittest.TestCase):
                 run_logger(task="failing", seed=3, run_id="run") as log,
                 self.assertRaisesRegex(RuntimeError, "success boom"),
             ):
-                _run_state_rollout(
+                _run_expert_rollout(
                     scene,
-                    _OneActionMachine(),
+                    lambda: _OneActionPolicy(),
                     _raising_success,
                     steps=10,
                     sink=lambda obs: None,
@@ -224,9 +219,9 @@ class BoundaryLoggingTests(unittest.TestCase):
                 tee_output(path),
                 run_logger(task="failing", seed=3, run_id="run") as log,
             ):
-                outcome = _run_state_rollout(
+                outcome = _run_expert_rollout(
                     scene,
-                    _ForeverMachine(),
+                    _ForeverPolicy,
                     _never,
                     steps=3,
                     sink=lambda obs: None,
@@ -246,9 +241,9 @@ class BoundaryLoggingTests(unittest.TestCase):
                 tee_output(path),
                 run_logger(task="failing", seed=3, run_id="run") as log,
             ):
-                outcome = _run_state_rollout(
+                outcome = _run_expert_rollout(
                     scene,
-                    _OneActionMachine(),
+                    lambda: _OneActionPolicy(),
                     _never,
                     steps=10,
                     sink=lambda obs: None,

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from collections.abc import Iterator
-from dataclasses import dataclass, replace
-from enum import Enum, auto
+from collections.abc import Callable, Iterator
 
 from openvitac_spec import (
     FRANKA_PANDA_GSMINI,
@@ -20,6 +18,7 @@ from openvitac_spec import (
 from ..base import EpisodeRandomization, Task
 from ..expert import Action, ExpertWorld, Quat, Vec3
 from ..motion import ee_for_tool_center
+from ..policy import Command, Policy, Sequence
 
 _HEAD_CAM_QUAT_XYZW = (0.310977, 0.562556, 0.670428, 0.370608)
 
@@ -111,97 +110,19 @@ _GRIP_TOLERANCE = 2e-3
 _GRIP_STALL_EPS = 5e-5
 _GRIP_STALL_TICKS = 8
 
-
-class _UsbPhase(Enum):
-    INIT = auto()
-    PREGRASP = auto()
-    DESCEND = auto()
-    CLOSE = auto()
-    LIFT = auto()
-    CARRY = auto()
-    ALIGN = auto()
-    CORRECT_1 = auto()
-    CORRECT_2 = auto()
-    INSERT = auto()
-    OPEN = auto()
-    RETRACT = auto()
-    DONE = auto()
-
-
-_MOVE_PHASES = frozenset(
-    {
-        _UsbPhase.PREGRASP,
-        _UsbPhase.DESCEND,
-        _UsbPhase.LIFT,
-        _UsbPhase.CARRY,
-        _UsbPhase.ALIGN,
-        _UsbPhase.CORRECT_1,
-        _UsbPhase.CORRECT_2,
-        _UsbPhase.INSERT,
-        _UsbPhase.RETRACT,
-    }
-)
-
-_NEXT: dict[_UsbPhase, _UsbPhase] = {
-    _UsbPhase.PREGRASP: _UsbPhase.DESCEND,
-    _UsbPhase.DESCEND: _UsbPhase.CLOSE,
-    _UsbPhase.CLOSE: _UsbPhase.LIFT,
-    _UsbPhase.LIFT: _UsbPhase.CARRY,
-    _UsbPhase.CARRY: _UsbPhase.ALIGN,
-    _UsbPhase.ALIGN: _UsbPhase.CORRECT_1,
-    _UsbPhase.CORRECT_1: _UsbPhase.CORRECT_2,
-    _UsbPhase.CORRECT_2: _UsbPhase.INSERT,
-    _UsbPhase.INSERT: _UsbPhase.OPEN,
-    _UsbPhase.OPEN: _UsbPhase.RETRACT,
-    _UsbPhase.RETRACT: _UsbPhase.DONE,
-}
-
 # Cartesian speed per tick.  Free-space transport stays fast; the final
 # align/null/insert sequence keeps the old slow contact approach.
-_PHASE_MAX_STEP_M: dict[_UsbPhase, float] = {
-    _UsbPhase.PREGRASP: 1e-3,
-    _UsbPhase.DESCEND: 1e-3,
-    _UsbPhase.LIFT: 1e-3,
-    _UsbPhase.CARRY: 1e-3,
-    _UsbPhase.ALIGN: 1e-4,
-    _UsbPhase.CORRECT_1: 1e-4,
-    _UsbPhase.CORRECT_2: 1e-4,
-    _UsbPhase.INSERT: 1e-4,
-    _UsbPhase.RETRACT: 1e-3,
+_PHASE_MAX_STEP_M: dict[str, float] = {
+    "PREGRASP": 1e-3,
+    "DESCEND": 1e-3,
+    "LIFT": 1e-3,
+    "CARRY": 1e-3,
+    "ALIGN": 1e-4,
+    "CORRECT_1": 1e-4,
+    "CORRECT_2": 1e-4,
+    "INSERT": 1e-4,
+    "RETRACT": 1e-3,
 }
-
-
-@dataclass(frozen=True)
-class _UsbState:
-    """Explicit machine state; the two command targets are always current."""
-
-    phase: _UsbPhase
-    ee_pos: Vec3 = (0.0, 0.0, 0.0)
-    ee_quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    gripper_qpos: float = 0.0
-    grasp_x: float = 0.0
-    grasp_y: float = 0.0
-    grasp_z: float = 0.0
-    slot_x: float = 0.0
-    slot_y: float = 0.0
-    slot_z: float = 0.0
-    insert_x: float = 0.0
-    insert_y: float = 0.0
-    grip_prev: float = 0.0
-    grip_stall: int = 0
-    start_pos: Vec3 = (0.0, 0.0, 0.0)
-    move_ticks: int = 0
-    move_tick: int = 0
-    settle: int = 0
-    settle_ticks: int = 0
-
-
-def _action(state: _UsbState, ee_pos: Vec3 | None = None) -> Action:
-    return Action(
-        ee_pos=state.ee_pos if ee_pos is None else ee_pos,
-        ee_quat=state.ee_quat,
-        gripper_qpos=state.gripper_qpos,
-    )
 
 
 def _lerp_pos(a: Vec3, b: Vec3, alpha: float) -> Vec3:
@@ -212,211 +133,201 @@ def _lerp_pos(a: Vec3, b: Vec3, alpha: float) -> Vec3:
     )
 
 
-def _enter(
-    phase: _UsbPhase, world: ExpertWorld, state: _UsbState
-) -> tuple[_UsbState, Action] | None:
-    """Compute the entry targets for ``phase`` and its first action."""
-    match phase:
-        case _UsbPhase.PREGRASP:
-            (ux, uy, uz), _ = world.object_pose("usb")
-            grasp_z = uz + _GRASP_HEIGHT
-            state = replace(
-                state,
-                phase=phase,
-                grasp_x=ux,
-                grasp_y=uy,
-                grasp_z=grasp_z,
-                ee_pos=_grasp_target(
-                    world,
-                    state.ee_quat,
-                    ux,
-                    uy,
-                    grasp_z,
-                    clearance=_APPROACH_CLEARANCE,
-                ),
-            )
-        case _UsbPhase.DESCEND:
-            state = replace(
-                state,
-                phase=phase,
-                ee_pos=_grasp_target(
-                    world,
-                    state.ee_quat,
-                    state.grasp_x,
-                    state.grasp_y,
-                    state.grasp_z,
-                ),
-            )
-        case _UsbPhase.CLOSE:
-            state = replace(
-                state,
-                phase=phase,
-                gripper_qpos=world.arm.gripper.close_qpos,
-                grip_prev=world.arm.gripper.joint_pos(),
-                grip_stall=0,
-            )
-        case _UsbPhase.LIFT:
-            state = replace(
-                state,
-                phase=phase,
-                ee_pos=_grasp_target(
-                    world,
-                    state.ee_quat,
-                    state.grasp_x,
-                    state.grasp_y,
-                    state.grasp_z + _LIFT_HEIGHT,
-                ),
-            )
-        case _UsbPhase.CARRY:
-            (sx, sy, sz), _ = world.object_pose("slot")
-            state = replace(
-                state,
-                phase=phase,
-                slot_x=sx,
-                slot_y=sy,
-                slot_z=sz,
-                ee_pos=_grasp_target(
-                    world,
-                    state.ee_quat,
-                    sx,
-                    sy,
-                    sz + _SLOT_HEIGHT + _GRASP_HEIGHT,
-                    clearance=_APPROACH_CLEARANCE,
-                ),
-            )
-        case _UsbPhase.ALIGN:
-            state = replace(
-                state,
-                phase=phase,
-                ee_pos=_grasp_target(
-                    world,
-                    state.ee_quat,
-                    state.slot_x,
-                    state.slot_y,
-                    state.slot_z + _SLOT_HEIGHT + _GRASP_HEIGHT,
-                ),
-            )
-        case _UsbPhase.CORRECT_1 | _UsbPhase.CORRECT_2:
-            # Null the measured USB-to-hand offset against the live opening.
-            (gx, gy, _), _ = world.object_pose("usb")
-            (ex, ey, ez), _ = world.arm.ee_pose()
-            insert_x, insert_y = ex + (state.slot_x - gx), ey + (state.slot_y - gy)
-            state = replace(
-                state,
-                phase=phase,
-                insert_x=insert_x,
-                insert_y=insert_y,
-                ee_pos=(insert_x, insert_y, ez),
-            )
-        case _UsbPhase.INSERT:
-            insert_distance = world.object_pose("usb")[0][2] - (
-                state.slot_z + _INSERT_Z
-            )
-            ee_z = world.arm.ee_pose()[0][2]
-            state = replace(
-                state,
-                phase=phase,
-                ee_pos=(state.insert_x, state.insert_y, ee_z - insert_distance),
-            )
-        case _UsbPhase.OPEN:
-            state = replace(
-                state,
-                phase=phase,
-                gripper_qpos=world.arm.gripper.open_qpos,
-                grip_prev=world.arm.gripper.joint_pos(),
-                grip_stall=0,
-            )
-        case _UsbPhase.RETRACT:
-            state = replace(
-                state,
-                phase=phase,
-                ee_pos=(state.insert_x, state.insert_y, _EE_RETRACT_Z),
-            )
-        case _UsbPhase.DONE:
-            return None
-        case _UsbPhase.INIT:
-            raise AssertionError("INIT enters through step(), not _enter()")
-    if phase in _MOVE_PHASES:
-        (cx, cy, cz), _ = world.arm.ee_pose()
-        start = (cx, cy, cz)
-        distance = math.dist(start, state.ee_pos)
-        ticks = max(1, math.ceil(distance / _PHASE_MAX_STEP_M[phase]))
-        state = replace(
-            state,
-            start_pos=start,
-            move_ticks=ticks,
-            move_tick=1,
-            settle=0,
-            settle_ticks=0,
+class _UsbPoints:
+    """The coordinates each phase samples off the world for the later ones."""
+
+    def __init__(self) -> None:
+        self.grasp: Vec3 = (0.0, 0.0, 0.0)
+        self.slot: Vec3 = (0.0, 0.0, 0.0)
+        self.insert_xy: tuple[float, float] = (0.0, 0.0)
+
+    def pregrasp(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        (ux, uy, uz), _ = world.object_pose("usb")
+        self.grasp = (ux, uy, uz + _GRASP_HEIGHT)
+        gx, gy, gz = self.grasp
+        return _grasp_target(
+            world, cmd.ee_quat, gx, gy, gz, clearance=_APPROACH_CLEARANCE
         )
-        return state, _action(
-            state, _lerp_pos(start, state.ee_pos, 1.0 / ticks)
+
+    def descend(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        gx, gy, gz = self.grasp
+        return _grasp_target(world, cmd.ee_quat, gx, gy, gz)
+
+    def lift(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        gx, gy, gz = self.grasp
+        return _grasp_target(world, cmd.ee_quat, gx, gy, gz + _LIFT_HEIGHT)
+
+    def carry(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        (sx, sy, sz), _ = world.object_pose("slot")
+        self.slot = (sx, sy, sz)
+        return _grasp_target(
+            world,
+            cmd.ee_quat,
+            sx,
+            sy,
+            sz + _SLOT_HEIGHT + _GRASP_HEIGHT,
+            clearance=_APPROACH_CLEARANCE,
         )
-    return state, _action(state)
+
+    def align(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        sx, sy, sz = self.slot
+        return _grasp_target(
+            world, cmd.ee_quat, sx, sy, sz + _SLOT_HEIGHT + _GRASP_HEIGHT
+        )
+
+    def correct(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        # Null the measured USB-to-hand offset against the live opening.
+        (gx, gy, _), _ = world.object_pose("usb")
+        (ex, ey, ez), _ = world.arm.ee_pose()
+        self.insert_xy = (ex + (self.slot[0] - gx), ey + (self.slot[1] - gy))
+        return (self.insert_xy[0], self.insert_xy[1], ez)
+
+    def insert(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        insert_distance = world.object_pose("usb")[0][2] - (
+            self.slot[2] + _INSERT_Z
+        )
+        ee_z = world.arm.ee_pose()[0][2]
+        return (self.insert_xy[0], self.insert_xy[1], ee_z - insert_distance)
+
+    def retract(self, world: ExpertWorld, cmd: Command) -> Vec3:
+        return (self.insert_xy[0], self.insert_xy[1], _EE_RETRACT_Z)
 
 
-class _UsbExpert:
-    """Per-tick USB phase machine.
+class _UsbMove:
+    """One move phase: distance-derived interpolation, then a settle window.
 
-    Phase order: PREGRASP -> DESCEND -> CLOSE -> LIFT -> CARRY -> ALIGN ->
-    CORRECT_1 -> CORRECT_2 -> INSERT -> OPEN -> RETRACT -> DONE.  Move phases
-    carry a distance-derived interpolation and settle window; CLOSE/OPEN wait
-    for the jaw to reach its target or stall.  The collector applies each
-    Action and owns the only ``scene.step()``.
+    ``target`` is read on the phase's first tick; its tick count comes from the
+    measured distance and the phase's own per-tick Cartesian speed.  After the
+    interpolation the goal is re-commanded until the hand has been within
+    tolerance for ``_MOVE_SETTLE_TICKS`` ticks, capped at
+    ``_MOVE_SETTLE_MAX_TICKS``.
     """
 
-    def init(self) -> _UsbState:
-        return _UsbState(phase=_UsbPhase.INIT)
+    def __init__(
+        self,
+        target: Callable[[ExpertWorld, Command], Vec3],
+        *,
+        max_step: float,
+    ) -> None:
+        self.target = target
+        self.max_step = max_step
+        self.finished = False
+        self._goal: Vec3 | None = None
+        self._start: Vec3 = (0.0, 0.0, 0.0)
+        self._ticks = 1
+        self._tick = 0
+        self._settle = 0
+        self._settle_ticks = 0
 
-    def step(
-        self, world: ExpertWorld, state: _UsbState
-    ) -> tuple[_UsbState, Action] | None:
-        if state.phase is _UsbPhase.INIT:
-            pos, quat = world.arm.ee_pose()
-            state = replace(
-                state,
-                ee_pos=pos,
-                ee_quat=quat,
-                gripper_qpos=world.arm.gripper.joint_pos(),
+    def step(self, world: ExpertWorld, cmd: Command) -> Action | None:
+        if self.finished:
+            raise RuntimeError("usb move already finished")
+        goal = self._goal
+        if goal is None:
+            goal = self.target(world, cmd)
+            self._goal = goal
+            self._start = world.arm.ee_pose()[0]
+            distance = math.dist(self._start, goal)
+            self._ticks = max(1, math.ceil(distance / self.max_step))
+            self._tick = 1
+            return Action(
+                _lerp_pos(self._start, goal, 1.0 / self._ticks),
+                cmd.ee_quat,
+                cmd.gripper_qpos,
             )
-            return _enter(_UsbPhase.PREGRASP, world, state)
-        if state.phase is _UsbPhase.DONE:
+        if self._tick < self._ticks:
+            self._tick += 1
+            return Action(
+                _lerp_pos(self._start, goal, self._tick / self._ticks),
+                cmd.ee_quat,
+                cmd.gripper_qpos,
+            )
+        (ex, ey, ez), _ = world.arm.ee_pose()
+        converged = math.dist((ex, ey, ez), goal) <= _MOVE_TOLERANCE_M
+        self._settle = self._settle + 1 if converged else 0
+        self._settle_ticks += 1
+        if (
+            self._settle >= _MOVE_SETTLE_TICKS
+            or self._settle_ticks >= _MOVE_SETTLE_MAX_TICKS
+        ):
+            self.finished = True
             return None
-        if state.phase in _MOVE_PHASES:
-            if state.move_tick < state.move_ticks:
-                state = replace(state, move_tick=state.move_tick + 1)
-                alpha = state.move_tick / state.move_ticks
-                return state, _action(
-                    state, _lerp_pos(state.start_pos, state.ee_pos, alpha)
-                )
-            (ex, ey, ez), _ = world.arm.ee_pose()
-            converged = (
-                math.dist((ex, ey, ez), state.ee_pos) <= _MOVE_TOLERANCE_M
-            )
-            settled = state.settle + 1 if converged else 0
-            state = replace(
-                state,
-                settle=settled,
-                settle_ticks=state.settle_ticks + 1,
-            )
-            if (
-                settled >= _MOVE_SETTLE_TICKS
-                or state.settle_ticks >= _MOVE_SETTLE_MAX_TICKS
-            ):
-                return _enter(_NEXT[state.phase], world, state)
-            return state, _action(state)
+        return Action(goal, cmd.ee_quat, cmd.gripper_qpos)
+
+
+class _UsbGrip:
+    """Hold the command until the jaw reaches its target or stops moving."""
+
+    def __init__(self) -> None:
+        self.finished = False
+        self._qpos: float | None = None
+        self._prev = 0.0
+        self._stall = 0
+
+    def qpos(self, world: ExpertWorld) -> float:
+        """The gripper target this phase commands; read once, on its first tick."""
+        raise NotImplementedError
+
+    def step(self, world: ExpertWorld, cmd: Command) -> Action | None:
+        if self.finished:
+            raise RuntimeError("usb grip already finished")
+        target = self._qpos
+        if target is None:
+            target = self.qpos(world)
+            self._qpos = target
+            self._prev = world.arm.gripper.joint_pos()
+            return Action(cmd.ee_pos, cmd.ee_quat, target)
         qpos = world.arm.gripper.joint_pos()
-        if abs(qpos - state.gripper_qpos) <= _GRIP_TOLERANCE:
-            return _enter(_NEXT[state.phase], world, state)
-        stalled = (
-            state.grip_stall + 1
-            if abs(qpos - state.grip_prev) <= _GRIP_STALL_EPS
-            else 0
+        if abs(qpos - target) <= _GRIP_TOLERANCE:
+            self.finished = True
+            return None
+        self._stall = (
+            self._stall + 1 if abs(qpos - self._prev) <= _GRIP_STALL_EPS else 0
         )
-        state = replace(state, grip_prev=qpos, grip_stall=stalled)
-        if stalled >= _GRIP_STALL_TICKS:
-            return _enter(_NEXT[state.phase], world, state)
-        return state, _action(state)
+        self._prev = qpos
+        if self._stall >= _GRIP_STALL_TICKS:
+            self.finished = True
+            return None
+        return Action(cmd.ee_pos, cmd.ee_quat, target)
+
+
+class _GripClose(_UsbGrip):
+    """Command the embodiment's fully closed gripper target."""
+
+    def qpos(self, world: ExpertWorld) -> float:
+        return world.arm.gripper.close_qpos
+
+
+class _GripOpen(_UsbGrip):
+    """Command the embodiment's fully open gripper target."""
+
+    def qpos(self, world: ExpertWorld) -> float:
+        return world.arm.gripper.open_qpos
+
+
+class _UsbPolicy(Policy):
+    """Insert the USB: grasp, lift, align over the slot, insert, release.
+
+    The step sequence spells out the legacy phase order -- PREGRASP, DESCEND,
+    CLOSE, LIFT, CARRY, ALIGN, CORRECT_1, CORRECT_2, INSERT, OPEN, RETRACT --
+    with each move phase keeping its own per-tick Cartesian speed.
+    """
+
+    def plan(self, world: ExpertWorld) -> Sequence:
+        points = _UsbPoints()
+        return Sequence(
+            _UsbMove(points.pregrasp, max_step=_PHASE_MAX_STEP_M["PREGRASP"]),
+            _UsbMove(points.descend, max_step=_PHASE_MAX_STEP_M["DESCEND"]),
+            _GripClose(),
+            _UsbMove(points.lift, max_step=_PHASE_MAX_STEP_M["LIFT"]),
+            _UsbMove(points.carry, max_step=_PHASE_MAX_STEP_M["CARRY"]),
+            _UsbMove(points.align, max_step=_PHASE_MAX_STEP_M["ALIGN"]),
+            _UsbMove(points.correct, max_step=_PHASE_MAX_STEP_M["CORRECT_1"]),
+            _UsbMove(points.correct, max_step=_PHASE_MAX_STEP_M["CORRECT_2"]),
+            _UsbMove(points.insert, max_step=_PHASE_MAX_STEP_M["INSERT"]),
+            _GripOpen(),
+            _UsbMove(points.retract, max_step=_PHASE_MAX_STEP_M["RETRACT"]),
+        )
 
 
 def _success(world: ExpertWorld) -> Iterator[bool]:
@@ -561,7 +472,7 @@ InsertUsb = Task(
     # LIFT -> CARRY -> ALIGN -> CORRECT_1 -> CORRECT_2 -> INSERT -> OPEN ->
     # RETRACT -> DONE.  Each Action carries the EE pose and gripper target;
     # success is a per-tick generator and the first True stops the rollout.
-    expert=_UsbExpert(),
+    expert=_UsbPolicy,
     required_capabilities=frozenset({"binary_close"}),
     randomizer=_randomize,
 )

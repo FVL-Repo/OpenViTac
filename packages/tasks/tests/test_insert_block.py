@@ -28,6 +28,7 @@ from openvitac_tasks.tasks.insert_block import (
     _RELEASE_RETRACT,
     _SETTLE_STEPS,
     InsertBlock,
+    _BlockPolicy,
 )
 
 _TOOL = gsmini_tool()
@@ -180,33 +181,39 @@ class _World:
             raise KeyError(prim_name) from None
 
 
-def _run(world: _World) -> list[str]:
-    """Drive the registered state machine and record its phase sequence."""
-    machine = InsertBlock.expert
-    state = machine.init()
-    phases: list[str] = []
+def _policy() -> _BlockPolicy:
+    """The task's registered expert, as its concrete policy type."""
+    policy = InsertBlock.expert()
+    assert isinstance(policy, _BlockPolicy)
+    return policy
+
+
+def _run(world: _World) -> tuple[_BlockPolicy, list[str]]:
+    """Drive the registered policy and record the step that commanded each tick."""
+    policy = _policy()
+    steps: list[str] = []
     while True:
-        result = machine.step(world, state)
-        if result is None:
-            return phases
-        state, action = result
-        phases.append(state.phase.name)
+        action = policy.step(world)
+        if action is None:
+            return policy, steps
+        assert policy.steps is not None
+        current = policy.steps.current
+        assert current is not None
+        steps.append(type(current).__name__)
         world.apply(action)
 
 
-def _run_until_success(world: _World) -> tuple[str, bool]:
-    """Drive the machine like the collector; return the first-true phase."""
-    machine = InsertBlock.expert
-    state = machine.init()
+def _run_until_success(world: _World) -> tuple[_BlockPolicy, bool]:
+    """Drive the policy like the collector; return it at the first-true tick."""
+    policy = _policy()
     verdicts = InsertBlock.success(world)
     while True:
-        result = machine.step(world, state)
-        if result is None:
+        action = policy.step(world)
+        if action is None:
             raise AssertionError("policy ended before the success gate")
-        state, action = result
         world.apply(action)
         if next(verdicts):
-            return str(state.phase.name), world.holding is None
+            return policy, world.holding is None
 
 
 def _fires(verdicts: Iterator[bool], ticks: int = _SETTLE_STEPS) -> bool:
@@ -325,7 +332,7 @@ class InsertBlockTests(unittest.TestCase):
     def test_expert_inserts_each_target_into_its_hole(self) -> None:
         for target, actor in _ACTOR.items():
             world = _World(target)
-            phases = _run(world)
+            policy, phases = _run(world)
 
             close = next(
                 i for i, event in enumerate(world.events) if event[0] == "close"
@@ -334,8 +341,10 @@ class InsertBlockTests(unittest.TestCase):
                 i for i, event in enumerate(world.events) if event[0] == "open"
             )
             self.assertLess(close, open_)
-            self.assertLess(phases.index("CLOSE"), phases.index("OPEN"))
-            self.assertEqual(phases[-1], "SETTLE")
+            self.assertLess(phases.index("CloseTo"), phases.index("OpenGripper"))
+            # Every step ran to the end, so the episode closed in SETTLE.
+            assert policy.steps is not None
+            self.assertEqual(policy.steps.index, len(policy.steps))
             bx, by, bz = world.poses[actor][0]
             self.assertAlmostEqual(bx, _BOX[0] + _HOLES[target][0], places=6)
             self.assertAlmostEqual(by, _BOX[1] + _HOLES[target][1], places=6)
@@ -351,8 +360,11 @@ class InsertBlockTests(unittest.TestCase):
 
     def test_first_true_is_after_release_retract_and_settle(self) -> None:
         world = _World("cube")
-        phase, released = _run_until_success(world)
-        self.assertEqual(phase, "SETTLE")
+        policy, released = _run_until_success(world)
+        assert policy.steps is not None
+        # The settle move is the last step, so the first true verdict lands in it
+        # and not during the retract before it.
+        self.assertEqual(policy.steps.index, len(policy.steps) - 1)
         self.assertTrue(released)
         box_top = world.poses["box_with_holes_yellow"][0][2] + _BOX_SIZE
         self.assertGreaterEqual(

@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import random
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
-from enum import Enum, auto
 
 from openvitac_spec import (
     FRANKA_PANDA_GSMINI,
@@ -23,18 +21,9 @@ from openvitac_spec import (
 )
 
 from ..base import EpisodeRandomization, Task
-from ..expert import Action, ExpertWorld, Quat, Vec3
-from ..motion import (
-    Hold,
-    Move,
-    advance_move,
-    align_pad_to_face,
-    begin_move,
-    ee_for_tool_center,
-    grasp_depth,
-    pad_close_q,
-    quat_rotate,
-)
+from ..expert import ExpertWorld, Quat, Vec3
+from ..motion import align_pad_to_face, grasp_depth, quat_rotate
+from ..policy import CloseTo, MoveToolTo, OpenGripper, Point, Policy, Sequence
 
 _HEAD_CAM_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)  # 2.x camera offset was WXYZ
 
@@ -113,187 +102,73 @@ def _randomize(task: Task, seed: int) -> EpisodeRandomization:
     )
 
 
-class _WeightPhase(Enum):
-    INIT = auto()
-    PREGRASP = auto()
-    DESCEND = auto()
-    CLOSE = auto()
-    LIFT = auto()
-    CARRY = auto()
-    PLACE = auto()
-    OPEN = auto()
-    RETRACT = auto()
-    DONE = auto()
-
-
-_NEXT = {
-    _WeightPhase.PREGRASP: _WeightPhase.DESCEND,
-    _WeightPhase.DESCEND: _WeightPhase.CLOSE,
-    _WeightPhase.CLOSE: _WeightPhase.LIFT,
-    _WeightPhase.LIFT: _WeightPhase.CARRY,
-    _WeightPhase.CARRY: _WeightPhase.PLACE,
-    _WeightPhase.PLACE: _WeightPhase.OPEN,
-    _WeightPhase.OPEN: _WeightPhase.RETRACT,
-    _WeightPhase.RETRACT: _WeightPhase.DONE,
-}
-
 _MOVE_TICKS = 60
 _SETTLE_TICKS = 60
 
 
-@dataclass(frozen=True)
-class _WeightState:
-    phase: _WeightPhase
-    label: str = ""
-    quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    command_pos: Vec3 = (0.0, 0.0, 0.0)
-    command_quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    gripper_qpos: float = 0.0
-    move: Move | None = None
-    hold: Hold | None = None
-
-
-def _action(state: _WeightState) -> Action:
-    return Action(state.command_pos, state.command_quat, state.gripper_qpos)
-
-
-def _enter(
-    phase: _WeightPhase, world: ExpertWorld, state: _WeightState
-) -> tuple[_WeightState, Action]:
-    """Compute ``phase``'s targets from the live world and its first action."""
-    block = _BLOCK_BY_LABEL[state.label]
-    plate = _PLATE_BY_LABEL[state.label]
-    # Every goal below is a *tool-center* point: the asset's pad midpoint, which
-    # ``ee_for_tool_center`` turns into the EE pose the IK solver wants.
-    tool = world.arm.tool
-    match phase:
-        case _WeightPhase.PREGRASP:
-            (bx, by, bz), _ = world.object_pose(block)
-            grasp = (bx, by, bz + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(
-                grasp, state.quat, tool, clearance=_TRANSIT_CLEARANCE
-            )
-            ticks = 120
-        case _WeightPhase.DESCEND:
-            (bx, by, bz), _ = world.object_pose(block)
-            grasp = (bx, by, bz + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(grasp, state.quat, tool)
-            ticks = _MOVE_TICKS
-        case _WeightPhase.CLOSE:
-            # Pad face GRASP_OVERTRAVEL into the block per side.
-            qpos = pad_close_q(tool, _BLOCK_WIDTH)
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
-            return state, _action(state)
-        case _WeightPhase.LIFT:
-            (bx, by, bz), _ = world.object_pose(block)
-            grasp = (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
-            goal = ee_for_tool_center(grasp, state.quat, tool)
-            ticks = 90
-        case _WeightPhase.CARRY:
-            (tx, ty, tz), _ = world.object_pose(plate)
-            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(
-                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
-            )
-            ticks = 120
-        case _WeightPhase.PLACE:
-            (tx, ty, tz), _ = world.object_pose(plate)
-            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(place, state.quat, tool)
-            ticks = 90
-        case _WeightPhase.OPEN:
-            qpos = world.arm.gripper.open_qpos
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
-            return state, _action(state)
-        case _WeightPhase.RETRACT:
-            (tx, ty, tz), _ = world.object_pose(plate)
-            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(
-                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
-            )
-            ticks = 90
-        case _WeightPhase.INIT | _WeightPhase.DONE:
-            raise AssertionError(f"{phase} has no entry targets")
-    move, action = begin_move(
-        world,
-        goal,
-        state.quat,
+def _move(
+    target: Point,
+    quat: Quat,
+    *,
+    clearance: float = 0.0,
+    ticks: int = _MOVE_TICKS,
+) -> MoveToolTo:
+    """One legacy move: ``ticks`` to the goal, then the task's settle re-command."""
+    return MoveToolTo(
+        target,
+        quat,
+        clearance=clearance,
         ticks=ticks,
         settle_ticks=_SETTLE_TICKS,
-        gripper_qpos=state.gripper_qpos,
-    )
-    return (
-        replace(
-            state,
-            phase=phase,
-            command_pos=goal,
-            command_quat=state.quat,
-            move=move,
-        ),
-        action,
     )
 
 
-class _WeightExpert:
-    """Per-tick scripted policy: grasp the selected block, place it, retract.
+class _WeightPolicy(Policy):
+    """Grasp the selected block, place it on its plate, release, retract.
 
-    Phase order: PREGRASP -> DESCEND -> CLOSE -> LIFT -> CARRY -> PLACE -> OPEN
-    -> RETRACT -> DONE, with the legacy tick budgets and 60-tick re-command.
+    The step sequence spells out the legacy phase order -- PREGRASP, DESCEND,
+    CLOSE, LIFT, CARRY, PLACE, OPEN, RETRACT -- with the legacy tick budgets and
+    a 60-tick hold on each grasp and release.
     """
 
-    def init(self) -> _WeightState:
-        return _WeightState(phase=_WeightPhase.INIT)
+    def plan(self, world: ExpertWorld) -> Sequence:
+        """Read the label, square the pads to the block face, chain the moves."""
+        label = _label(world)
+        block = _BLOCK_BY_LABEL[label]
+        plate = _PLATE_BY_LABEL[label]
+        _, quat = world.arm.ee_pose()
+        # Parallel the pad plane to the selected block's +/-y face; see
+        # roughness_classification for the lever-arm rationale.
+        _, bquat = world.object_pose(block)
+        quat = align_pad_to_face(
+            world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+        )
 
-    def step(
-        self, world: ExpertWorld, state: _WeightState
-    ) -> tuple[_WeightState, Action] | None:
-        if state.phase is _WeightPhase.INIT:
-            pos, quat = world.arm.ee_pose()
-            # Parallel the pad plane to the selected block's +/-y face; see
-            # roughness_classification for the lever-arm rationale.
-            _, bquat = world.object_pose(_BLOCK_BY_LABEL[_label(world)])
-            quat = align_pad_to_face(
-                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
-            )
-            state = replace(
-                state,
-                label=_label(world),
-                quat=quat,
-                command_pos=pos,
-                command_quat=quat,
-                gripper_qpos=world.arm.gripper.joint_pos(),
-            )
-            return _enter(_WeightPhase.PREGRASP, world, state)
-        if state.phase is _WeightPhase.DONE:
-            return None
-        if state.move is not None:
-            advanced = advance_move(world, state.move, state.gripper_qpos)
-            if advanced is not None:
-                move, action = advanced
-                return (
-                    replace(
-                        state,
-                        move=move,
-                        command_pos=action.ee_pos,
-                        command_quat=action.ee_quat,
-                    ),
-                    action,
-                )
-            state = replace(state, move=None)
-            next_phase = _NEXT[state.phase]
-            if next_phase is _WeightPhase.DONE:
-                return None
-            return _enter(next_phase, world, state)
-        if state.hold is not None:
-            hold = state.hold.consume()
-            if hold is not None:
-                return replace(state, hold=hold), _action(state)
-            state = replace(state, hold=None)
-            next_phase = _NEXT[state.phase]
-            if next_phase is _WeightPhase.DONE:
-                return None
-            return _enter(next_phase, world, state)
-        raise AssertionError(f"phase {state.phase} has no active command")
+        # Every goal below is a *tool-center* point: the asset's pad midpoint,
+        # which ``_move`` turns into the EE pose the IK solver wants.  The goals
+        # are read on the tick their move starts, like the phase machine did.
+        def grasp() -> Vec3:
+            (bx, by, bz), _ = world.object_pose(block)
+            return (bx, by, bz + _GRASP_HEIGHT)
+
+        def lift() -> Vec3:
+            (bx, by, bz), _ = world.object_pose(block)
+            return (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
+
+        def place() -> Vec3:
+            (tx, ty, tz), _ = world.object_pose(plate)
+            return (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+
+        return Sequence(
+            _move(grasp, quat, clearance=_TRANSIT_CLEARANCE, ticks=120),  # PREGRASP
+            _move(grasp, quat),  # DESCEND
+            CloseTo(_BLOCK_WIDTH, hold_ticks=60),  # CLOSE
+            _move(lift, quat, ticks=90),  # LIFT
+            _move(place, quat, clearance=_APPROACH_CLEARANCE, ticks=120),  # CARRY
+            _move(place, quat, ticks=90),  # PLACE
+            OpenGripper(hold_ticks=60),  # OPEN
+            _move(place, quat, clearance=_APPROACH_CLEARANCE, ticks=90),  # RETRACT
+        )
 
 
 def _success(world: ExpertWorld) -> Iterator[bool]:
@@ -405,7 +280,7 @@ WeightClassification = Task(
         "Classify the block weight by touch: place the light block on the blue "
         "plate and the heavy block on the yellow plate."
     ),
-    expert=_WeightExpert(),
+    expert=_WeightPolicy,
     success=_success,
     randomizer=_randomize,
     required_capabilities=frozenset({"binary_close"}),

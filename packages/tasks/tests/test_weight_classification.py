@@ -11,6 +11,7 @@ from _tool import gsmini_tool
 from openvitac_spec import GripperCapability
 from openvitac_tasks import Action
 from openvitac_tasks.motion import pad_close_q, tool_center
+from openvitac_tasks.policy import MoveToolTo
 from openvitac_tasks.tasks.weight_classification import (
     _APPROACH_CLEARANCE,
     _BLOCK_STANDBY_BY_LABEL,
@@ -21,6 +22,7 @@ from openvitac_tasks.tasks.weight_classification import (
     _SUCCESS_Z_TOLERANCE,
     _TARGET_BLOCK_Z,
     WeightClassification,
+    _WeightPolicy,
 )
 
 _TOOL = gsmini_tool()
@@ -145,33 +147,39 @@ class _World:
         raise KeyError(prim_name)
 
 
-def _run(world: _World) -> list[str]:
-    """Drive the registered state machine and record its phase sequence."""
-    machine = WeightClassification.expert
-    state = machine.init()
-    phases: list[str] = []
+def _policy() -> _WeightPolicy:
+    """The task's registered expert, as its concrete policy type."""
+    policy = WeightClassification.expert()
+    assert isinstance(policy, _WeightPolicy)
+    return policy
+
+
+def _run(world: _World) -> tuple[_WeightPolicy, list[str]]:
+    """Drive the registered policy and record the step that commanded each tick."""
+    policy = _policy()
+    steps: list[str] = []
     while True:
-        result = machine.step(world, state)
-        if result is None:
-            return phases
-        state, action = result
-        phases.append(state.phase.name)
+        action = policy.step(world)
+        if action is None:
+            return policy, steps
+        assert policy.steps is not None
+        current = policy.steps.current
+        assert current is not None
+        steps.append(type(current).__name__)
         world.apply(action)
 
 
-def _run_until_success(world: _World) -> tuple[str, float]:
-    """Drive the machine like the collector; return the first-true phase."""
-    machine = WeightClassification.expert
-    state = machine.init()
+def _run_until_success(world: _World) -> tuple[_WeightPolicy, float]:
+    """Drive the policy like the collector; return it at the first-true tick."""
+    policy = _policy()
     verdicts = WeightClassification.success(world)
     while True:
-        result = machine.step(world, state)
-        if result is None:
+        action = policy.step(world)
+        if action is None:
             raise AssertionError("policy ended before the success gate")
-        state, action = result
         world.apply(action)
         if next(verdicts):
-            return str(state.phase.name), world.arm.gripper.joint_pos()
+            return policy, world.arm.gripper.joint_pos()
 
 
 class WeightClassificationTests(unittest.TestCase):
@@ -256,8 +264,11 @@ class WeightClassificationTests(unittest.TestCase):
     def test_first_true_is_after_open_and_retract(self) -> None:
         target = _PLATES[_TARGETS["light"]]
         world = _World("light")
-        phase, gripper_qpos = _run_until_success(world)
-        self.assertEqual(phase, "RETRACT")
+        policy, gripper_qpos = _run_until_success(world)
+        assert policy.steps is not None
+        # The retract move is the last step, so the first true verdict lands in it.
+        self.assertIsInstance(policy.steps.current, MoveToolTo)
+        self.assertEqual(policy.steps.index, len(policy.steps) - 1)
         self.assertGreaterEqual(
             gripper_qpos, world.arm.gripper.open_qpos - _SUCCESS_Z_TOLERANCE
         )
@@ -274,7 +285,7 @@ class WeightClassificationTests(unittest.TestCase):
         for label in _BLOCKS:
             target = _PLATES[_TARGETS[label]]
             world = _World(label)
-            phases = _run(world)
+            policy, phases = _run(world)
 
             close = next(
                 i for i, event in enumerate(world.events) if event[0] == "close"
@@ -289,8 +300,10 @@ class WeightClassificationTests(unittest.TestCase):
             )
             self.assertLess(close, target_move)
             self.assertLess(target_move, open_)
-            self.assertLess(phases.index("CLOSE"), phases.index("OPEN"))
-            self.assertEqual(phases[-1], "RETRACT")
+            self.assertLess(phases.index("CloseTo"), phases.index("OpenGripper"))
+            # Every step ran to the end, so the episode closed in RETRACT.
+            assert policy.steps is not None
+            self.assertEqual(policy.steps.index, len(policy.steps))
             placed = world.blocks[label]
             self.assertAlmostEqual(placed[0], target[0], places=6)
             self.assertAlmostEqual(placed[1], target[1], places=6)

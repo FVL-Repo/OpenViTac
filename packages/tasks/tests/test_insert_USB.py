@@ -1,4 +1,4 @@
-"""insert_USB calibration and state-machine tests (no Isaac)."""
+"""insert_USB calibration and policy tests (no Isaac)."""
 
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ from openvitac_tasks.tasks.insert_USB import (
     _SLOT_HEIGHT,
     _SUCCESS_EE_Z,
     _grasp_target,
+    _GripClose,
+    _GripOpen,
+    _UsbPolicy,
 )
 
 _TOOL = gsmini_tool()
@@ -40,6 +43,20 @@ _PHASE_ORDER = (
     "INSERT",
     "OPEN",
     "RETRACT",
+)
+# The step behind each phase: every phase is a move except the two jaw waits.
+_PHASE_KINDS = (
+    "_UsbMove",
+    "_UsbMove",
+    "_GripClose",
+    "_UsbMove",
+    "_UsbMove",
+    "_UsbMove",
+    "_UsbMove",
+    "_UsbMove",
+    "_UsbMove",
+    "_GripOpen",
+    "_UsbMove",
 )
 
 
@@ -152,22 +169,22 @@ class _FakeWorld:
         raise KeyError(name)
 
 
-class InsertUsbStateMachineTests(unittest.TestCase):
-    def _run(
-        self,
-    ) -> tuple[_FakeWorld, list[str], dict[str, Action], object]:
-        machine = InsertUsb.expert
+class InsertUsbPolicyTests(unittest.TestCase):
+    def _run(self) -> tuple[_FakeWorld, list[str], dict[str, Action], _UsbPolicy]:
+        """Drive the policy like the collector; return its phases, in order."""
+        policy = InsertUsb.expert()
+        assert isinstance(policy, _UsbPolicy)
         world = _FakeWorld()
-        state = machine.init()
         phases: list[str] = []
         last_action: dict[str, Action] = {}
         phase = ""
         for _ in range(4096):
-            result = machine.step(world, state)
-            if result is None:
+            action = policy.step(world)
+            if action is None:
                 break
-            state, action = result
-            phase = state.phase.name
+            assert policy.steps is not None
+            self.assertLess(policy.steps.index, len(_PHASE_ORDER))
+            phase = _PHASE_ORDER[policy.steps.index]
             if not phases or phases[-1] != phase:
                 phases.append(phase)
             last_action[phase] = action
@@ -176,13 +193,21 @@ class InsertUsbStateMachineTests(unittest.TestCase):
             world.arm.set_ee_target(action.ee_pos, action.ee_quat)
             world.arm.gripper.set_target(action.gripper_qpos)
         else:
-            self.fail("state machine did not terminate within 4096 ticks")
+            self.fail("policy did not terminate within 4096 ticks")
         self.assertEqual(phase, "RETRACT")
-        return world, phases, last_action, state
+        assert policy.steps is not None
+        self.assertEqual(policy.steps.index, len(policy.steps))
+        return world, phases, last_action, policy
 
     def test_phase_order_and_representative_targets(self) -> None:
-        world, phases, last, _ = self._run()
+        world, phases, last, policy = self._run()
         self.assertEqual(tuple(phases), _PHASE_ORDER)
+        assert policy.steps is not None
+        steps = tuple(policy.steps)
+        self.assertEqual(tuple(type(step).__name__ for step in steps), _PHASE_KINDS)
+        # The two jaw waits are the only non-move phases.
+        self.assertIsInstance(steps[2], _GripClose)
+        self.assertIsInstance(steps[9], _GripOpen)
 
         grasp_z = _USB_START[2] + _GRASP_HEIGHT
         # The machine keeps the hand pose it found at INIT; the fake arm starts
@@ -234,10 +259,12 @@ class InsertUsbStateMachineTests(unittest.TestCase):
         self.assertAlmostEqual(uz, _SLOT[2] + _INSERT_Z, places=9)
 
     def test_done_is_sticky_and_stops_emitting(self) -> None:
-        machine = InsertUsb.expert
-        world, _, _, state = self._run()
-        self.assertIsNone(machine.step(world, state))
-        self.assertIsNone(machine.step(world, state))
+        world, _, _, policy = self._run()
+        # A finished policy refuses further ticks instead of emitting one.
+        with self.assertRaisesRegex(RuntimeError, "already finished"):
+            policy.step(world)
+        with self.assertRaisesRegex(RuntimeError, "already finished"):
+            policy.step(world)
 
 
 class InsertUsbSuccessGeneratorTests(unittest.TestCase):

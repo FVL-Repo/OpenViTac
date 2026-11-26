@@ -27,12 +27,7 @@ _HEAD_CAM_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)  # 2.x camera offset was WXYZ
 class _TodoExpert:
     """Explicit stub: the scripted policy for this task is not yet written."""
 
-    def init(self) -> None:
-        raise NotImplementedError("expert not yet written for hardness_classification")
-
-    def step(
-        self, world: ExpertWorld, state: None
-    ) -> tuple[None, Action] | None:
+    def step(self, world: ExpertWorld) -> Action | None:
         raise NotImplementedError("expert not yet written for hardness_classification")
 
 
@@ -106,7 +101,7 @@ HardnessClassification = Task(
         "Classify the block hardness by touch: place the soft red block on the blue "
         "plate and the hard red block on the yellow plate."
     ),
-    expert=_TodoExpert(),
+    expert=_TodoExpert,
     success=_todo_success,
     required_capabilities=frozenset({"binary_close"}),
 )

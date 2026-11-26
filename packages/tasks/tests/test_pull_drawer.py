@@ -201,26 +201,28 @@ class _World:
         raise KeyError(name)
 
 
-def _run_until_success(world: _World) -> str:
-    """Drive the machine like the collector; return the first-true phase."""
-    machine = pull_drawer.PullDrawer.expert
-    state = machine.init()
+def _run_until_success(world: _World) -> pull_drawer._PullPolicy:
+    """Drive the policy like the collector; return it at the first-true tick."""
+    policy = pull_drawer.PullDrawer.expert()
+    assert isinstance(policy, pull_drawer._PullPolicy)
     verdicts = pull_drawer.PullDrawer.success(world)
     while True:
-        result = machine.step(world, state)
-        if result is None:
+        action = policy.step(world)
+        if action is None:
             raise AssertionError("policy ended before the success gate")
-        state, action = result
         world.apply(action)
         if next(verdicts):
-            return str(state.phase.name)
+            return policy
 
 
 class PullDrawerExpertTests(unittest.TestCase):
     def test_first_true_is_during_pull_with_gripper_closed(self) -> None:
         world = _World()
-        phase = _run_until_success(world)
-        self.assertEqual(phase, "PULL")
+        policy = _run_until_success(world)
+        assert policy.steps is not None
+        # The pull is the last step, so the first true verdict lands in it.
+        self.assertIsInstance(policy.steps.current, pull_drawer._PullSegment)
+        self.assertEqual(policy.steps.index, len(policy.steps) - 1)
         self.assertAlmostEqual(world.gripper.joint_pos(), world.gripper.close_qpos)
         local = quat_rotate(
             quat_conjugate(world.cabinet_quat),

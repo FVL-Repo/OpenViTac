@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import random
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
-from enum import Enum, auto
 
 from openvitac_spec import (
     FRANKA_PANDA_GSMINI,
@@ -22,17 +20,16 @@ from openvitac_spec import (
 )
 
 from ..base import EpisodeRandomization, Task
-from ..expert import Action, ExpertWorld, Quat, Vec3
-from ..motion import (
-    Hold,
-    Move,
-    advance_move,
-    align_pad_to_face,
-    begin_move,
-    ee_for_tool_center,
-    grasp_depth,
-    pad_close_q,
-    quat_rotate,
+from ..expert import ExpertWorld, Quat, Vec3
+from ..motion import align_pad_to_face, grasp_depth, quat_rotate
+from ..policy import (
+    CloseTo,
+    MoveToolTo,
+    OpenGripper,
+    Point,
+    Policy,
+    Sequence,
+    Step,
 )
 
 _HEAD_CAM_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)  # 2.x camera offset was WXYZ
@@ -119,241 +116,102 @@ def _randomize(task: Task, seed: int) -> EpisodeRandomization:
     )
 
 
-class _RegraspPhase(Enum):
-    INIT = auto()
-    GRASP_APPROACH = auto()
-    GRASP_DESCEND = auto()
-    GRASP_CLOSE = auto()
-    GRASP_LIFT = auto()
-    PARK_APPROACH = auto()
-    PARK_DESCEND = auto()
-    PARK_OPEN = auto()
-    PARK_RETRACT = auto()
-    PLACE_APPROACH = auto()
-    PLACE_DESCEND = auto()
-    PLACE_OPEN = auto()
-    PLACE_RETRACT = auto()
-    DONE = auto()
-
-
-_NEXT = {
-    _RegraspPhase.GRASP_APPROACH: _RegraspPhase.GRASP_DESCEND,
-    _RegraspPhase.GRASP_DESCEND: _RegraspPhase.GRASP_CLOSE,
-    _RegraspPhase.GRASP_CLOSE: _RegraspPhase.GRASP_LIFT,
-    _RegraspPhase.PARK_APPROACH: _RegraspPhase.PARK_DESCEND,
-    _RegraspPhase.PARK_DESCEND: _RegraspPhase.PARK_OPEN,
-    _RegraspPhase.PARK_OPEN: _RegraspPhase.PARK_RETRACT,
-    _RegraspPhase.PLACE_APPROACH: _RegraspPhase.PLACE_DESCEND,
-    _RegraspPhase.PLACE_DESCEND: _RegraspPhase.PLACE_OPEN,
-    _RegraspPhase.PLACE_OPEN: _RegraspPhase.PLACE_RETRACT,
-    _RegraspPhase.PLACE_RETRACT: _RegraspPhase.DONE,
-}
-
 _MOVE_TICKS = 60
 _SETTLE_TICKS = 60
 
 
-@dataclass(frozen=True)
-class _RegraspState:
-    phase: _RegraspPhase
-    grasp_block: str = ""
-    park: Vec3 = (0.0, 0.0, 0.0)
-    quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    command_pos: Vec3 = (0.0, 0.0, 0.0)
-    command_quat: Quat = (0.0, 0.0, 0.0, 1.0)
-    gripper_qpos: float = 0.0
-    move: Move | None = None
-    hold: Hold | None = None
-
-
-def _action(state: _RegraspState) -> Action:
-    return Action(state.command_pos, state.command_quat, state.gripper_qpos)
-
-
-def _enter(
-    phase: _RegraspPhase, world: ExpertWorld, state: _RegraspState
-) -> tuple[_RegraspState, Action]:
-    """Compute ``phase``'s targets from the live world and its first action."""
-    # Every goal below is a *tool-center* point: the asset's pad midpoint, which
-    # ``ee_for_tool_center`` turns into the EE pose the IK solver wants.
-    tool = world.arm.tool
-    match phase:
-        case _RegraspPhase.GRASP_APPROACH:
-            (bx, by, bz), _ = world.object_pose(state.grasp_block)
-            grasp = (bx, by, bz + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(
-                grasp, state.quat, tool, clearance=_TRANSIT_CLEARANCE
-            )
-            ticks = 100
-        case _RegraspPhase.GRASP_DESCEND:
-            (bx, by, bz), _ = world.object_pose(state.grasp_block)
-            grasp = (bx, by, bz + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(grasp, state.quat, tool)
-            ticks = _MOVE_TICKS
-        case _RegraspPhase.GRASP_CLOSE:
-            # Pad face GRASP_OVERTRAVEL into the grasped block per side.
-            qpos = pad_close_q(tool, _BLOCK_WIDTH_BY_NAME[state.grasp_block])
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
-            return state, _action(state)
-        case _RegraspPhase.GRASP_LIFT:
-            (bx, by, bz), _ = world.object_pose(state.grasp_block)
-            grasp = (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
-            goal = ee_for_tool_center(grasp, state.quat, tool)
-            ticks = 90
-        case _RegraspPhase.PARK_APPROACH:
-            px, py, pz = state.park
-            goal = ee_for_tool_center(
-                (px, py, pz + _GRASP_HEIGHT),
-                state.quat,
-                tool,
-                clearance=_APPROACH_CLEARANCE,
-            )
-            ticks = 70
-        case _RegraspPhase.PARK_DESCEND:
-            px, py, pz = state.park
-            goal = ee_for_tool_center((px, py, pz + _GRASP_HEIGHT), state.quat, tool)
-            ticks = _MOVE_TICKS
-        case _RegraspPhase.PARK_OPEN:
-            qpos = world.arm.gripper.open_qpos
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
-            return state, _action(state)
-        case _RegraspPhase.PARK_RETRACT:
-            px, py, pz = state.park
-            goal = ee_for_tool_center(
-                (px, py, pz + _GRASP_HEIGHT),
-                state.quat,
-                tool,
-                clearance=_TRANSIT_CLEARANCE,
-            )
-            ticks = _MOVE_TICKS
-        case _RegraspPhase.PLACE_APPROACH:
-            (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
-            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(
-                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
-            )
-            ticks = 100
-        case _RegraspPhase.PLACE_DESCEND:
-            (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
-            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(place, state.quat, tool)
-            ticks = 90
-        case _RegraspPhase.PLACE_OPEN:
-            qpos = world.arm.gripper.open_qpos
-            state = replace(state, phase=phase, gripper_qpos=qpos, hold=Hold(60))
-            return state, _action(state)
-        case _RegraspPhase.PLACE_RETRACT:
-            (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
-            place = (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
-            goal = ee_for_tool_center(
-                place, state.quat, tool, clearance=_APPROACH_CLEARANCE
-            )
-            ticks = 90
-        case _RegraspPhase.INIT | _RegraspPhase.DONE:
-            raise AssertionError(f"{phase} has no entry targets")
-    move, action = begin_move(
-        world,
-        goal,
-        state.quat,
+def _move(
+    target: Point,
+    quat: Quat,
+    *,
+    clearance: float = 0.0,
+    ticks: int = _MOVE_TICKS,
+) -> MoveToolTo:
+    """One legacy move: ``ticks`` to the goal, then the task's settle re-command."""
+    return MoveToolTo(
+        target,
+        quat,
+        clearance=clearance,
         ticks=ticks,
         settle_ticks=_SETTLE_TICKS,
-        gripper_qpos=state.gripper_qpos,
-    )
-    return (
-        replace(
-            state,
-            phase=phase,
-            command_pos=goal,
-            command_quat=state.quat,
-            move=move,
-        ),
-        action,
     )
 
 
-def _advance(
-    phase: _RegraspPhase, world: ExpertWorld, state: _RegraspState
-) -> tuple[_RegraspState, Action] | None:
-    """Follow ``phase``'s transition, including the regrasp branch."""
-    if phase is _RegraspPhase.GRASP_LIFT:
-        target = (
-            _RegraspPhase.PLACE_APPROACH
-            if state.grasp_block == "rough_block"
-            else _RegraspPhase.PARK_APPROACH
-        )
-    elif phase is _RegraspPhase.PARK_RETRACT:
-        target = _RegraspPhase.GRASP_APPROACH
-        state = replace(state, grasp_block="rough_block")
-    else:
-        target = _NEXT[phase]
-    if target is _RegraspPhase.DONE:
-        return None
-    return _enter(target, world, state)
+class _RegraspPolicy(Policy):
+    """Grasp a block, park it when it is the smooth one, then place the rough one.
 
-
-class _RegraspExpert:
-    """Per-tick scripted policy: grasp a block, regrasp if it was smooth.
-
-    Phase order: GRASP_* (approach, descend, close, lift), then either
-    PLACE_* when the rough block was grasped first or PARK_* followed by
-    GRASP_* for the rough block and PLACE_*.  Each move keeps the legacy tick
-    budget and 60-tick re-command.
+    The step sequence spells out the legacy phase order -- GRASP_* (approach,
+    descend, close, lift), then either PLACE_* when the rough block was grasped
+    first or PARK_* followed by a second GRASP_* for the rough block and
+    PLACE_* -- with the legacy tick budgets and the 60-tick re-command.
     """
 
-    def init(self) -> _RegraspState:
-        return _RegraspState(phase=_RegraspPhase.INIT)
+    def plan(self, world: ExpertWorld) -> Sequence:
+        """Read the sampled sides, square the pads, chain the two grasps."""
+        rough_side = _side_param(world, "rough_block_side")
+        initial_side = _side_param(world, "initial_grasp_side")
+        first_block = "rough_block" if initial_side == rough_side else "smooth_block"
+        park = _PARK_BY_SIDE[initial_side]
+        _, quat = world.arm.ee_pose()
+        # Parallel the pad plane to the grasped block's +/-y face; see
+        # roughness_classification for the lever-arm rationale.  Both blocks stay
+        # axis-aligned (upright on the table), so the second grasp reuses it.
+        _, bquat = world.object_pose(first_block)
+        quat = align_pad_to_face(
+            world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
+        )
 
-    def step(
-        self, world: ExpertWorld, state: _RegraspState
-    ) -> tuple[_RegraspState, Action] | None:
-        if state.phase is _RegraspPhase.INIT:
-            pos, quat = world.arm.ee_pose()
-            rough_side = _side_param(world, "rough_block_side")
-            initial_side = _side_param(world, "initial_grasp_side")
-            first_block = (
-                "rough_block" if initial_side == rough_side else "smooth_block"
-            )
-            # Parallel the pad plane to the grasped block's +/-y face; see
-            # roughness_classification for the lever-arm rationale.  Both blocks stay
-            # axis-aligned (upright on the table), so the second grasp reuses it.
-            _, bquat = world.object_pose(first_block)
-            quat = align_pad_to_face(
-                world.arm.tool, quat, quat_rotate(bquat, (0.0, 1.0, 0.0))
-            )
-            state = replace(
-                state,
-                grasp_block=first_block,
-                park=_PARK_BY_SIDE[initial_side],
-                quat=quat,
-                command_pos=pos,
-                command_quat=quat,
-                gripper_qpos=world.arm.gripper.joint_pos(),
-            )
-            return _enter(_RegraspPhase.GRASP_APPROACH, world, state)
-        if state.phase is _RegraspPhase.DONE:
-            return None
-        if state.move is not None:
-            advanced = advance_move(world, state.move, state.gripper_qpos)
-            if advanced is not None:
-                move, action = advanced
-                return (
-                    replace(
-                        state,
-                        move=move,
-                        command_pos=action.ee_pos,
-                        command_quat=action.ee_quat,
-                    ),
-                    action,
-                )
-            state = replace(state, move=None)
-            return _advance(state.phase, world, state)
-        if state.hold is not None:
-            hold = state.hold.consume()
-            if hold is not None:
-                return replace(state, hold=hold), _action(state)
-            state = replace(state, hold=None)
-            return _advance(state.phase, world, state)
-        raise AssertionError(f"phase {state.phase} has no active command")
+        # Every goal below is a *tool-center* point: the asset's pad midpoint,
+        # which ``_move`` turns into the EE pose the IK solver wants.  The goals
+        # are read on the tick their move starts, like the phase machine did.
+        def grasp_steps(block: str) -> list[Step]:
+            def grasp() -> Vec3:
+                (bx, by, bz), _ = world.object_pose(block)
+                return (bx, by, bz + _GRASP_HEIGHT)
+
+            def lift() -> Vec3:
+                (bx, by, bz), _ = world.object_pose(block)
+                return (bx, by, bz + _GRASP_HEIGHT + _LIFT_HEIGHT)
+
+            return [
+                _move(grasp, quat, clearance=_TRANSIT_CLEARANCE, ticks=100),
+                _move(grasp, quat),
+                CloseTo(_BLOCK_WIDTH_BY_NAME[block], hold_ticks=60),
+                _move(lift, quat, ticks=90),
+            ]
+
+        def park_steps() -> list[Step]:
+            def target() -> Vec3:
+                px, py, pz = park
+                return (px, py, pz + _GRASP_HEIGHT)
+
+            return [
+                _move(target, quat, clearance=_APPROACH_CLEARANCE, ticks=70),
+                _move(target, quat),
+                OpenGripper(hold_ticks=60),
+                _move(target, quat, clearance=_TRANSIT_CLEARANCE),
+            ]
+
+        def place_steps() -> list[Step]:
+            def place() -> Vec3:
+                (tx, ty, tz), _ = world.object_pose(_ROUGH_PLATE)
+                return (tx, ty, tz + _TARGET_BLOCK_Z + _GRASP_HEIGHT)
+
+            return [
+                _move(place, quat, clearance=_APPROACH_CLEARANCE, ticks=100),
+                _move(place, quat, ticks=90),
+                OpenGripper(hold_ticks=60),
+                _move(place, quat, clearance=_APPROACH_CLEARANCE, ticks=90),
+            ]
+
+        steps = grasp_steps(first_block)
+        if first_block == "rough_block":
+            steps += place_steps()
+        else:
+            steps += park_steps()
+            steps += grasp_steps("rough_block")
+            steps += place_steps()
+        return Sequence(*steps)
 
 
 def _success(world: ExpertWorld) -> Iterator[bool]:
@@ -463,7 +321,7 @@ RoughnessGuidedRegrasp = Task(
         ),
     ),
     instruction="Find the rough block by touch and place it on the yellow plate.",
-    expert=_RegraspExpert(),
+    expert=_RegraspPolicy,
     success=_success,
     randomizer=_randomize,
     required_capabilities=frozenset({"binary_close"}),
